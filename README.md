@@ -1,1 +1,118 @@
-"# NMF_ProfileR" 
+# NMFprofileR
+
+[![R-CMD-check](https://github.com/MilesGithub/NMFprofileR/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/MilesGithub/NMFprofileR/actions/workflows/R-CMD-check.yaml)  
+[![License:
+MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+------------------------------------------------------------------------
+
+## Overview
+
+**NMFprofileR** is an R package for comprehensive multi-rank
+Non-negative Matrix Factorization (NMF) analysis of transcriptomic data.
+It provides automated rank estimation, factor-specific gene assignment,
+gene set enrichment analysis, and publication-quality plots for
+consolidated summary and consensus maps.
+
+------------------------------------------------------------------------
+
+## Features
+
+-   Multi-rank NMF with reproducible results (`brunet`, `lee`, and
+    others).
+-   Per-factor basis gene extraction using all genes assigned to each
+    factor.
+-   Automated generation of:
+    -   Rank survey plots
+    -   Consensus maps
+    -   Factor correspondence heatmaps
+    -   Consolidated summary metrics
+-   Supports user-defined gene backgrounds for enrichment analysis.
+-   Clean output directories for reproducible workflows.
+
+------------------------------------------------------------------------
+
+## Installation
+
+Install directly from GitHub using `devtools`:
+
+    # install.packages("devtools")
+    devtools::install_github("MilesGithub/NMFprofileR")
+
+------------------------------------------------------------------------
+
+## Usage
+
+    library(NMFprofileR)
+
+    # Load example expression data (genes x samples)
+    data("example_expression_data")
+
+    # Run the NMFprofileR pipeline
+    results <- NMFprofileR(
+      expression_data          = example_expression_data,
+      nmf_rank                 = 2:5,
+      output_prefix            = "results/NMF",
+      gene_list_filter_file    = NULL,
+      nmf_method               = "brunet",
+      nmf_nrun                 = 20,
+      gprofiler_organism       = "hsapiens",
+      gprofiler_sources        = c("GO:BP","GO:MF","GO:CC","REAC","TF"),
+      gprofiler_cutoff         = 0.05,
+      custom_theme             = theme_classic(base_size = 12)
+    )
+
+------------------------------------------------------------------------
+
+## Output
+
+The pipeline generates:
+
+-   `results/NMF/nmf_core/` — NMF R objects per rank.  
+-   `results/NMF/basis_genes/` — Per-factor gene assignments (all
+    genes).  
+-   `results/NMF/enrichment/` — Factor-specific and combined enrichment
+    results.  
+-   `results/NMF/plots/` — Publication-quality heatmaps and consensus
+    plots.  
+-   `results/NMF/summaries/` — Consolidated summary of all ranks and
+    factors.
+
+------------------------------------------------------------------------
+
+## Example Plots
+
+-   **Rank Survey Plot** – metrics across tested ranks.  
+-   **Consensus Map** – reproducibility of factorization.  
+-   **Factor Correspondence Heatmap** – identifies similar factors
+    across ranks.  
+-   **Consolidated Summary Heatmap** – combined factor-level metrics for
+    all ranks.
+
+------------------------------------------------------------------------
+
+## Citation
+
+    Miles Mee, 2025. NMFprofileR: Comprehensive multi-rank NMF analysis and enrichment in R. GitHub repository: https://github.com/MilesGithub/NMFprofileR
+
+Also cite underlying methods:
+
+-   Gaujoux, R., & Seoighe, C. (2010). A flexible R package for
+    nonnegative matrix factorization. *BMC Bioinformatics*, 11, 367.  
+-   Raudvere, U., Kolberg, L., Kuzmin, I., Arak, T., Adler, P.,
+    Peterson, H., & Vilo, J. (2019). g:Profiler: a web server for
+    functional enrichment analysis and conversions of gene lists.
+    *Nucleic Acids Research*, 47(W1), W191–W198.
+
+------------------------------------------------------------------------
+
+## License
+
+MIT License — see [LICENSE](LICENSE).
+
+------------------------------------------------------------------------
+
+## Contact
+
+Open an issue on GitHub or contact **Miles Mee** at
+**<miles.william.mee@gmail.com>**.

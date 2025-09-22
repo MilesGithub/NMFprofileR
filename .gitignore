@@ -1,0 +1,15 @@
+# RStudio project files
+*.Rproj
+.Rproj.user/
+.Ruserdata
+
+# R session / history
+.Rhistory
+.RData
+
+# Build / output
+inst/doc
+*.log
+*.pdf
+*.html
+*.aux

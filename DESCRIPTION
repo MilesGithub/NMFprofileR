@@ -1,0 +1,42 @@
+Package: NMFprofileR
+Type: Package
+Title: What the Package Does (Title Case)
+Version: 0.1.0
+Authors@R: c(
+    person(
+      "Miles", "Mee",
+      email = "miles.william.mee@gmail.com",
+      role = c("aut", "cre")
+    )
+  )
+Description: More about what it does (maybe more than one line).
+    Continuation lines should be indented.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+LazyDataCompression: xz
+Imports: 
+    dplyr,
+    gprofiler2,
+    ggplot2,
+    NMF,
+    readr,
+    tidyr,
+    stringr,
+    forcats,
+    tibble,
+    pheatmap,
+    ComplexHeatmap,
+    circlize,
+    uwot,
+    cli,
+    magrittr,
+    tidyselect
+RoxygenNote: 7.3.2
+Depends: 
+    R (>= 3.5)
+Suggests: 
+    BiocManager,
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
