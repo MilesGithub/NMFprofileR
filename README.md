@@ -58,8 +58,7 @@ Install directly from GitHub using `devtools`:
       nmf_nrun                 = 20,
       gprofiler_organism       = "hsapiens",
       gprofiler_sources        = c("GO:BP","GO:MF","GO:CC","REAC","TF"),
-      gprofiler_cutoff         = 0.05,
-      custom_theme             = theme_classic(base_size = 12)
+      gprofiler_cutoff         = 0.05
     )
 
 ------------------------------------------------------------------------
