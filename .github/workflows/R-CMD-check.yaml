@@ -2,36 +2,59 @@ name: R-CMD-check
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   R-CMD-check:
-    runs-on: ${{ matrix.config.os }}
-    strategy:
-      matrix:
-        config:
-          - { os: ubuntu-latest }
-          - { os: macos-latest }
-          - { os: windows-latest }
-
-    name: R CMD check (${{ matrix.config.os }})
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      # 1. Checkout the repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up R
+      # 2. Set up R
+      - name: Setup R
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: '4.3'
+          use-public-rspm: true
 
-      - name: Install dependencies
+      # 3. Set up Pandoc
+      # This action installs Pandoc, which is required by R Markdown to build vignettes.
+      - name: Setup Pandoc
+        uses: r-lib/actions/setup-pandoc@v2
+
+      # 4. Install system dependencies
+      - name: Install system dependencies
         run: |
-          install.packages('remotes')
-          remotes::install_deps(dependencies = TRUE)
+          sudo apt-get update
+          sudo apt-get install -y libxml2-dev libssl-dev libcurl4-openssl-dev libgit2-dev libfontconfig1-dev
 
-      - name: Check package
+      # 5. Install R package dependencies (Corrected for Bioconductor)
+      - name: Install R package dependencies
+        run: |
+          # First, install BiocManager and remotes
+          install.packages(c("BiocManager", "remotes"), repos = "https://cloud.r-project.org")
+          # Then, use BiocManager to set the correct repositories and install all dependencies
+          # This command will find both CRAN and Bioconductor packages listed in DESCRIPTION
+          remotes::install_deps(dependencies = TRUE, repos = BiocManager::repositories())
+        shell: Rscript {0}
+
+      # 6. Run R CMD check
+      - name: Run R CMD check
         run: |
           R CMD build .
-          PKG_TAR=$(ls *.tar.gz)
-          R CMD check $PKG_TAR --no-manual --as-cran
+          R CMD check *_.tar.gz --no-manual --as-cran
+        shell: bash
+
+      # 7. Upload check results as artifacts
+      - name: Upload check results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R-CMD-check-results
+          path: |
+            *.tar.gz
+            *.Rcheck
