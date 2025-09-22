@@ -51,13 +51,13 @@ NMFprofileR <- function(
     expression_threshold = 10.0,
     variance_quantile = 0.7,
     nmf_method = "brunet",
-    nmf_nrun = 50,
+    nmf_nrun = 20,
     nmf_seed = 123456,
     gprofiler_organism = "hsapiens",
     gprofiler_sources = c("GO:BP", "GO:CC", "GO:MF", "REAC", "TF"),
     gprofiler_correction = "g_SCS",
     gprofiler_cutoff = 0.05,
-    enrichment_plot_top_n = 20,
+    enrichment_plot_top_n = 50,
     verbose = FALSE
 ) {
   # --- Helper for verbose/debug messages ---
