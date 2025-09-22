@@ -1,16 +1,20 @@
 Package: NMFprofileR
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Consensus NMF Profiling and Functional Enrichment of Transcriptomic Data
 Version: 0.1.0
-Authors@R: c(
+Authors@R: 
     person(
-      "Miles", "Mee",
+      given = "Miles",
+      family = "Mee",
       email = "miles.william.mee@gmail.com",
-      role = c("aut", "cre")
+      role = c("aut", "cre"),
+      comment = c(ORCID = "0000-0002-9389-0430")
     )
-  )
-Description: More about what it does (maybe more than one line).
-    Continuation lines should be indented.
+Description: Provides a reproducible pipeline for nonnegative matrix factorization (NMF) 
+    of transcriptomic data across multiple ranks, including consensus clustering, 
+    visualization, and downstream functional interpretation. Identified factor-specific 
+    gene sets are analyzed with Gene Ontology (GO) and pathway enrichment (via gprofiler2) 
+    to reveal underlying biological processes.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
