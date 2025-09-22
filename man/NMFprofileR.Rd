@@ -12,13 +12,14 @@ NMFprofileR(
   expression_threshold = 10,
   variance_quantile = 0.7,
   nmf_method = "brunet",
-  nmf_nrun = 50,
+  nmf_nrun = 20,
   nmf_seed = 123456,
   gprofiler_organism = "hsapiens",
-  gprofiler_sources = c("GO:BP", "GO:MF", "REAC", "KEGG", "TF"),
+  gprofiler_sources = c("GO:BP", "GO:CC", "GO:MF", "REAC", "TF"),
   gprofiler_correction = "g_SCS",
   gprofiler_cutoff = 0.05,
-  enrichment_plot_top_n = 20
+  enrichment_plot_top_n = 50,
+  verbose = FALSE
 )
 }
 \arguments{
@@ -65,6 +66,8 @@ enrichment results.}
 
 \item{enrichment_plot_top_n}{An integer specifying the number of top enriched
 terms to display in the summary dot plots.}
+
+\item{verbose}{A logical value. If TRUE, prints detailed messages. Defaults to TRUE.}
 }
 \value{
 A single data frame (`consolidated_summary_df`) containing a detailed

@@ -171,37 +171,37 @@ perform_enrichment <- function(basis_genes_list,
                                output_dir,
                                k) {
   cli::cli_alert_info("Performing per-factor functional enrichment (k={k})...")
-  dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
   all_results <- lapply(names(basis_genes_list), function(factor_name) {
     gene_set <- basis_genes_list[[factor_name]]
     if (length(gene_set) < 5) return(NULL)
 
     gost_res <- tryCatch({
+
+      named_query <- list(gene_set)
+      names(named_query) <- factor_name
       suppressMessages(
         suppressWarnings(
           gprofiler2::gost(
-            query = gene_set,
+            query = named_query,
             organism = organism,
             sources = sources,
             correction_method = correction,
             user_threshold = cutoff,
             custom_bg = background_genes,
             significant = TRUE
-      )))
+          )))
     }, error = function(e) {
-      warning(sprintf("g:Profiler query failed for %s (k=%s): %s", factor_name, k, conditionMessage(e)), call. = FALSE)
+      warning(sprintf("g:Profiler query failed for %s (k=%s): %s", factor_name, k, e$message), call. = FALSE)
       return(NULL)
     })
 
     if (!is.null(gost_res) && is.data.frame(gost_res$result) && nrow(gost_res$result) > 0) {
-      res_df <- gost_res$result
-      res_df$Factor <- factor_name
-      out_path <- file.path(output_dir, paste0("Enrichment_Rank_k", k, "_", factor_name, ".tsv"))
-      readr::write_tsv(res_df, out_path)
-      return(res_df)
+      readr::write_tsv(gost_res$result, file.path(output_dir, paste0("Enrichment_Rank_k", k, "_", factor_name, ".tsv")))
+      return(gost_res)
+    } else {
+      return(NULL)
     }
-    return(NULL)
   })
 
   return(all_results)
@@ -298,13 +298,13 @@ generate_rank_summary <- function(k, W, H, sample_assignments, basis_genes_list,
       0L
     }
 
-    enrich_counts <- if (is.data.frame(combined_gprofiler_df) && nrow(combined_gprofiler_df) > 0) {
+    enrich_counts <- if (nrow(combined_gprofiler_df) > 0 && "Factor" %in% names(combined_gprofiler_df)) {
       combined_gprofiler_df %>%
         dplyr::filter(.data$Factor == f_name) %>%
         dplyr::count(.data$source) %>%
         tidyr::pivot_wider(names_from = "source", values_from = "n", values_fill = 0)
     } else {
-      tibble::tibble()
+      tibble::tibble() # Return an empty tibble if no valid enrichment data exists
     }
 
     summary_row <- tibble::tibble(

@@ -35,13 +35,13 @@ custom_theme <- function() {
 #' @param file_prefix The base prefix for all output file names.
 #' @param nrun The number of NMF runs performed.
 #' @param top_n The number of top enriched terms to display in dot plots.
-#'
+#' @param gost_objects_list
 #' #' @importFrom tidyselect where
 #'
 #' @noRd
 generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gprofiler_df,
                                 combined_enrichment_results_df, expr_matrix, basis_genes,
-                                k_plots_dir, file_prefix, nrun, top_n) {
+                                k_plots_dir, file_prefix, nrun, top_n, gost_objects_list) {
 
   cli::cli_alert_info("Generating plots for k={k}...")
 
@@ -90,49 +90,172 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
   enrichment_plots_dir <- file.path(k_plots_dir, "Enrichment_Plots")
   dir.create(enrichment_plots_dir, showWarnings = FALSE, recursive = TRUE)
 
-  # Plot 1: Dot Plot of Combined Enrichment Analysis (All Basis Genes)
-  if (nrow(combined_enrichment_results_df) > 0) {
-    plot_data_combined <- combined_enrichment_results_df %>%
-      dplyr::slice_min(.data$p_value, n = top_n, with_ties = FALSE)
 
-    suppressWarnings({
-      combined_enrich_plot <- ggplot2::ggplot(plot_data_combined, ggplot2::aes(x = -log10(.data$p_value), y = forcats::fct_reorder(stringr::str_wrap(.data$term_name, 60), -log10(.data$p_value)))) +
-        ggplot2::geom_segment(ggplot2::aes(x = 0, xend = -log10(.data$p_value), yend = forcats::fct_reorder(stringr::str_wrap(.data$term_name, 60), -log10(.data$p_value))), color = "gray") +
-        ggplot2::geom_point(ggplot2::aes(size = .data$intersection_size), color = "purple4") +
-        ggplot2::labs(title = "Top Enriched Terms from All Basis Genes", subtitle = paste("k =", k), x = "-Log10(Adjusted P-value)", y = NULL, size = "Gene Count") +
-        ggplot2::theme_bw(base_size = 11) + custom_theme()
+  # --- Manhattan plot section with extensive debugging ---
 
-      plot_height_combined <- 4 + (nrow(plot_data_combined) * 0.25)
-      ggplot2::ggsave(
-        filename = file.path(enrichment_plots_dir, paste0("Enrichment_Dotplot_All_Factors_Combined_Rank_k", k, ".pdf")),
-        plot = combined_enrich_plot, width = 10, height = plot_height_combined, device = "pdf", limitsize = FALSE
-      )
-    })
+  # Step 1: filter out NULL elements
+  valid_gost_results <- gost_objects_list[!sapply(gost_objects_list, is.null)]
+
+  # Step 2: ensure deterministic names for the list elements
+  orig_names <- names(valid_gost_results)
+
+  # Create fallback names if necessary (use Factor_#_k# to be unambiguous)
+  fallback_names <- paste0("Factor_", seq_along(valid_gost_results), "_k", k)
+  if (is.null(orig_names) || any(is.na(orig_names) | orig_names == "")) {
+    names(valid_gost_results) <- fallback_names
+  } else {
+    # keep original names but replace any empty with fallback
+    new_names <- orig_names
+    empty_idx <- which(is.na(new_names) | new_names == "")
+    if (length(empty_idx) > 0) new_names[empty_idx] <- fallback_names[empty_idx]
+    names(valid_gost_results) <- new_names
   }
 
-  # Plot 2: Per-Factor and Per-Source Enrichment Dot Plots
-  if (nrow(combined_gprofiler_df) > 0) {
-    # Split data by source and factor to generate plots for each combination
-    plot_groups <- split(combined_gprofiler_df, list(combined_gprofiler_df$source, combined_gprofiler_df$Factor))
-    for (group_df in plot_groups) {
-      if (nrow(group_df) > 0) {
-        plot_data_enrich <- group_df %>% dplyr::slice_min(.data$p_value, n = top_n, with_ties = FALSE)
-        src <- plot_data_enrich$source[1]
-        factor_name <- plot_data_enrich$Factor[1]
+  # Step 3: iterate over each gost object and generate a Manhattan plot if safe
+  if (length(valid_gost_results) > 0) {
+    cli::cli_alert_info("-> Generating enrichment Manhattan plot(s)...")
 
-        plot_height <- 3 + (nrow(plot_data_enrich) * 0.3)
-        suppressWarnings({
-          enrich_plot <- ggplot2::ggplot(plot_data_enrich, ggplot2::aes(x = -log10(.data$p_value), y = forcats::fct_reorder(stringr::str_wrap(.data$term_name, 60), -log10(.data$p_value)))) +
-            ggplot2::geom_segment(ggplot2::aes(x = 0, xend = -log10(.data$p_value), yend = forcats::fct_reorder(stringr::str_wrap(.data$term_name, 60), -log10(.data$p_value))), color = "gray") +
-            ggplot2::geom_point(ggplot2::aes(size = .data$intersection_size), color = "steelblue") +
-            ggplot2::labs(title = paste("Top Enriched Terms:", src), subtitle = paste("Cohort k =", k, "|", factor_name), x = "-Log10(Adjusted P-value)", y = NULL, size = "Gene Count") +
-            ggplot2::theme_bw(base_size = 11) + custom_theme() + ggplot2::theme(axis.text.y = ggplot2::element_text(size = 9))
+    for (nm in names(valid_gost_results)) {
+      gost_obj <- valid_gost_results[[nm]]
 
-          ggplot2::ggsave(
-            filename = file.path(enrichment_plots_dir, paste0("Enrichment_Dotplot_Rank_k", k, "_", factor_name, "_", gsub(":", "_", src), ".pdf")),
-            plot = enrich_plot, width = 8, height = plot_height, device = "pdf", limitsize = FALSE
-          )
+      # Check for result presence and structure
+      has_result <- is.list(gost_obj) && "result" %in% names(gost_obj)
+
+      if (has_result) {
+        res_df <- gost_obj$result
+        if (is.data.frame(res_df)) {
+          # Inspect query column if present
+          if ("query" %in% colnames(res_df)) {
+            qvals <- res_df$query
+          }
+        }
+      }
+
+      # Decide whether to plot
+      can_plot <- FALSE
+      reason_skip <- character(0)
+      if (!is.list(gost_obj)) {
+        reason_skip <- "gost_obj is not a list"
+      } else if (!("result" %in% names(gost_obj))) {
+        reason_skip <- "missing 'result' element"
+      } else if (!is.data.frame(gost_obj$result)) {
+        reason_skip <- "'result' is not a data.frame"
+      } else if (nrow(gost_obj$result) == 0) {
+        reason_skip <- "'result' has 0 rows"
+      } else if (!("query" %in% colnames(gost_obj$result))) {
+        # gostplot uses result$query for splitting/grouping; require it
+        reason_skip <- "'result' lacks 'query' column"
+      } else if (all(is.na(gost_obj$result$query))) {
+        reason_skip <- "'result$query' is all NA"
+      } else {
+        can_plot <- TRUE
+      }
+
+      if (can_plot) {
+
+      # Attempt to create and save the plot with robust error handling
+      out_file <- file.path(enrichment_plots_dir, paste0("Enrichment_Manhattan_Plot_Rank_k", k, "_", nm, ".pdf"))
+
+      tryCatch({
+        # gostplot can be noisy; suppress messages/warnings but preserve errors
+        p <- suppressMessages(suppressWarnings(gprofiler2::gostplot(gost_obj, interactive = FALSE)))
+
+        # Try to save using publish_gostplot (preferred if available)
+        tryCatch({
+          suppressWarnings(suppressMessages(
+            gprofiler2::publish_gostplot(p,
+                                         highlight_terms = NULL,
+                                         filename = out_file,
+                                         width = 12, height = 7)
+          ))
+        }, error = function(e_pub) {
+          # fallback: if p is a ggplot object, try ggsave
+          if (inherits(p, "ggplot")) {
+            suppressWarnings(ggplot2::ggsave(filename = out_file, plot = p, width = 10, height = 6, device = "pdf"))
+          } else {
+            stop("gostplot output not saveable by publish_gostplot or ggsave")
+          }
         })
+
+      }, error = function(e_plot) {
+        cli::cli_alert_warning(paste0("Failed to generate Manhattan plot for ", nm, " (k=", k, "): ", conditionMessage(e_plot)))
+        # continue to next factor without stopping the pipeline
+      })
+
+      }
+    } # end for loop
+
+  } else {
+    cli::cli_alert_warning(paste0("No enrichment results available for Manhattan plots at k=", k))
+  }
+
+  # Quick guard
+  if (is.null(combined_gprofiler_df) || nrow(combined_gprofiler_df) == 0) {
+    cli::cli_alert_info("-> combined_gprofiler_df is empty; skipping per-factor dot plots.")
+  } else {
+    # Defensively find the correct column names for 'Factor' and 'source'
+    col_lc <- tolower(colnames(combined_gprofiler_df))
+    factor_col <- if ("factor" %in% col_lc) "Factor" else if ("query" %in% col_lc) "query" else NULL
+    source_col <- if ("source" %in% col_lc) "source" else NULL
+
+    if (is.null(factor_col) || is.null(source_col)) {
+      cli::cli_alert_warning("-> Missing 'Factor'/'query' or 'source' column in enrichment data; skipping per-factor dot plots.")
+    } else {
+      # Prepare a clean data frame for plotting
+      plot_df <- combined_gprofiler_df %>%
+        # Ensure required columns exist and handle potential missing ones gracefully
+        dplyr::mutate(
+          .Factor = as.character(.data[[factor_col]]),
+          .source = as.character(.data[[source_col]]),
+          p_value = if ("p_value" %in% names(.)) .data$p_value else NA_real_,
+          term_name = if ("term_name" %in% names(.)) .data$term_name else "Unknown",
+          intersection_size = if ("intersection_size" %in% names(.)) .data$intersection_size else 1
+        ) %>%
+        # Filter for rows that have all necessary information for plotting
+        dplyr::filter(
+          !is.na(.data$.Factor) & nzchar(.data$.Factor) &
+            !is.na(.data$.source) & nzchar(.data$.source) &
+            !is.na(.data$p_value)
+        )
+
+      if (nrow(plot_df) > 0) {
+        # Split the data frame into a list of data frames, one for each plot
+        plot_groups <- split(plot_df, list(plot_df$.source, plot_df$.Factor), drop = TRUE)
+
+        # Use lapply to iterate and create a plot for each group
+        invisible(lapply(plot_groups, function(group_df) {
+          tryCatch({
+            src <- group_df$.source[1]
+            factor_name <- group_df$.Factor[1]
+
+            # Select top N terms by p-value for each group
+            plot_data_enrich <- group_df %>%
+              dplyr::arrange(.data$p_value) %>%
+              dplyr::slice_head(n = top_n)
+
+            plot_height <- 3 + (nrow(plot_data_enrich) * 0.3)
+
+            enrich_plot <- ggplot2::ggplot(plot_data_enrich, ggplot2::aes(x = -log10(.data$p_value), y = forcats::fct_reorder(stringr::str_wrap(.data$term_name, 60), -log10(.data$p_value)))) +
+              ggplot2::geom_segment(ggplot2::aes(x = 0, xend = -log10(.data$p_value), yend = forcats::fct_reorder(stringr::str_wrap(.data$term_name, 60), -log10(.data$p_value))), color = "gray") +
+              ggplot2::geom_point(ggplot2::aes(size = .data$intersection_size), color = "steelblue") +
+              ggplot2::labs(
+                title = paste("Top Enriched Terms:", src),
+                subtitle = paste("Cohort k =", k, "|", factor_name),
+                x = "-Log10(Adjusted P-value)", y = NULL, size = "Gene Count"
+              ) +
+              ggplot2::theme_bw(base_size = 11) + custom_theme() + ggplot2::theme(axis.text.y = ggplot2::element_text(size = 9))
+
+            # Create a file-safe name and save the plot
+            safe_src_name <- gsub(":", "_", src)
+            out_file <- file.path(enrichment_plots_dir, paste0("Enrichment_Dot_Plot_Rank_k", k, "_", factor_name, "_", safe_src_name, ".pdf"))
+            ggplot2::ggsave(filename = out_file, plot = enrich_plot, width = 8, height = plot_height, device = "pdf", limitsize = FALSE)
+
+          }, error = function(e) {
+            cli::cli_alert_warning("-> Failed to generate a dot plot for group {.val {src}/{factor_name}}: {e$message}")
+          })
+        }))
+      } else {
+        cli::cli_alert_info("-> No valid enrichment results found to generate per-factor dot plots.")
       }
     }
   }
@@ -163,24 +286,69 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
   heatmap_plots_dir <- file.path(k_plots_dir, "Expression_Heatmaps")
   dir.create(heatmap_plots_dir, showWarnings = FALSE, recursive = TRUE)
 
-  # Global Heatmap (all basis genes)
-  genes_for_heatmap <- unique(unlist(basis_genes))
-  if (length(genes_for_heatmap) > 0) {
-    mat_plot <- expr_matrix[genes_for_heatmap, , drop = FALSE]
+  # --- Plot 1: Global Heatmap (all basis genes) ---
+  genes_for_global_heatmap <- unique(unlist(basis_genes))
+  if (length(genes_for_global_heatmap) > 1) {
+    mat_plot <- expr_matrix[genes_for_global_heatmap, , drop = FALSE]
+    # Scale data: log2 transform, then calculate row-wise Z-score
     mat_scaled <- t(scale(t(log2(mat_plot + 1))))
-    mat_scaled[is.na(mat_scaled)] <- 0
+    mat_scaled[is.na(mat_scaled)] <- 0 # Handle cases with zero variance
+    # Cap the Z-scores for better color mapping
     mat_scaled[mat_scaled > 2.5] <- 2.5
     mat_scaled[mat_scaled < -2.5] <- -2.5
 
-    ht <- ComplexHeatmap::Heatmap(mat_scaled, name = "Row Z-Score",
-                                  col = circlize::colorRamp2(c(-2.5, 0, 2.5), c("#3771c8", "white", "#ff9955")),
-                                  top_annotation = ha_col, show_row_names = FALSE, show_column_names = FALSE,
-                                  row_split = NMF::predict(nmf_result, what = "features")[genes_for_heatmap],
-                                  column_split = NMF::predict(nmf_result, what = "samples"), use_raster = TRUE)
+    ht_global <- ComplexHeatmap::Heatmap(
+      mat_scaled,
+      name = "Row Z-Score",
+      col = circlize::colorRamp2(c(-2.5, 0, 2.5), c("#3771c8", "white", "#ff9955")),
+      top_annotation = ha_col,
+      show_row_names = FALSE,
+      show_column_names = FALSE,
+      column_title = "All Basis Genes",
+      # Split rows and columns by their predicted factor for a structured view
+      row_split = NMF::predict(nmf_result, what = "features")[genes_for_global_heatmap],
+      column_split = NMF::predict(nmf_result, what = "samples")
+    )
 
     grDevices::pdf(file.path(heatmap_plots_dir, paste0("Expression_Heatmap_Global_Rank_k", k, ".pdf")), 8, 7)
-    ComplexHeatmap::draw(ht)
+    ComplexHeatmap::draw(ht_global)
     grDevices::dev.off()
+  }
+
+  # --- Plot 2: Individual Heatmap for Each Factor ---
+  for (factor_idx in 1:k) {
+    factor_name <- paste0("Factor_", factor_idx)
+    factor_genes <- basis_genes[[factor_name]]
+
+    # Only create a heatmap if there are at least 2 genes for this factor
+    if (length(factor_genes) > 1) {
+      mat_plot_factor <- expr_matrix[factor_genes, , drop = FALSE]
+      mat_scaled_factor <- t(scale(t(log2(mat_plot_factor + 1))))
+      mat_scaled_factor[is.na(mat_scaled_factor)] <- 0
+      mat_scaled_factor[mat_scaled_factor > 2.5] <- 2.5
+      mat_scaled_factor[mat_scaled_factor < -2.5] <- -2.5
+
+      # Order the columns by this factor's coefficient values for clear visualization
+      col_order <- order(H[factor_idx, ], decreasing = TRUE)
+
+      ht_factor <- ComplexHeatmap::Heatmap(
+        mat_scaled_factor[, col_order, drop = FALSE],
+        name = "Row Z-Score",
+        col = circlize::colorRamp2(c(-2.5, 0, 2.5), c("#3771c8", "white", "#ff9955")),
+        top_annotation = ha_col,
+        show_row_names = FALSE,
+        show_column_names = FALSE,
+        column_title = paste(factor_name, "Gene Signature")
+      )
+
+      # Adjust plot dimensions based on number of genes to show
+      plot_height <- if (length(factor_genes) <= 50) 7 else 6
+      plot_width <- 8
+
+      grDevices::pdf(file.path(heatmap_plots_dir, paste0("Expression_Heatmap_Rank_k", k, "_", factor_name, ".pdf")), plot_width, plot_height)
+      ComplexHeatmap::draw(ht_factor)
+      grDevices::dev.off()
+    }
   }
 
   # --- NMF Diagnostic Plots ---
@@ -212,6 +380,7 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
   pdf(file.path(k_plots_dir, paste0("04_CoefMap_Rank_k", k, ".pdf")), 10, 8)
   replayPlot(cf_plot)
   dev.off()
+
 }
 
 

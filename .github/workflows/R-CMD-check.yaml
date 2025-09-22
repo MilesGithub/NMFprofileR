@@ -22,7 +22,6 @@ jobs:
           use-public-rspm: true
 
       # 3. Set up Pandoc
-      # This action installs Pandoc, which is required by R Markdown to build vignettes.
       - name: Setup Pandoc
         uses: r-lib/actions/setup-pandoc@v2
 
@@ -32,24 +31,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxml2-dev libssl-dev libcurl4-openssl-dev libgit2-dev libfontconfig1-dev
 
-      # 5. Install R package dependencies (Corrected for Bioconductor)
+      # 5. Install R package dependencies
       - name: Install R package dependencies
         run: |
-          # First, install BiocManager and remotes
           install.packages(c("BiocManager", "remotes"), repos = "https://cloud.r-project.org")
-          # Then, use BiocManager to set the correct repositories and install all dependencies
-          # This command will find both CRAN and Bioconductor packages listed in DESCRIPTION
           remotes::install_deps(dependencies = TRUE, repos = BiocManager::repositories())
         shell: Rscript {0}
 
-      # 6. Run R CMD check
+      # 6. Run R CMD check (skip building vignettes to avoid Quarto issues)
       - name: Run R CMD check
         run: |
           R CMD build .
-          R CMD check *_.tar.gz --no-manual --as-cran
+          R CMD check *_.tar.gz --no-manual --no-build-vignettes --as-cran
         shell: bash
 
-      # 7. Upload check results as artifacts
+      # 7. Upload check results
       - name: Upload check results
         if: failure()
         uses: actions/upload-artifact@v4

@@ -2,5 +2,10 @@
 
 export("%>%")
 export(NMFprofileR)
+importFrom(grDevices,dev.control)
+importFrom(grDevices,dev.off)
+importFrom(grDevices,pdf)
+importFrom(grDevices,recordPlot)
+importFrom(grDevices,replayPlot)
 importFrom(magrittr,"%>%")
 importFrom(tidyselect,where)

@@ -36,6 +36,9 @@
 #'   enrichment results.
 #' @param enrichment_plot_top_n An integer specifying the number of top enriched
 #'   terms to display in the summary dot plots.
+#' @param verbose A logical value. If TRUE, prints detailed messages. Defaults to TRUE.
+#'
+#' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
 #'
 #' @return A single data frame (`consolidated_summary_df`) containing a detailed
 #'   summary for every factor from every rank tested. All detailed results, plots,
@@ -63,9 +66,6 @@ NMFprofileR <- function(
   # --- Helper for verbose/debug messages ---
   vmsg <- function(...) {
     if (isTRUE(verbose)) cli::cli_alert_info(...)
-  }
-  dmsg <- function(...) {
-    if (isTRUE(verbose)) cli::cli_alert_debug(...)
   }
 
   time_start <- Sys.time()
@@ -100,7 +100,6 @@ NMFprofileR <- function(
 
   # --- NMF Rank Estimation Survey (safe parallel handling) ---
   cli::cli_h2("Step 2: Performing NMF Rank Estimation Survey")
-  dmsg("Preparing nmfEstimateRank arguments...")
   is_windows <- tolower(.Platform$OS.type) == "windows"
 
   estim_real <- tryCatch({
@@ -144,170 +143,181 @@ NMFprofileR <- function(
   nmf_rds_paths <- list()
 
   for (k in nmf_rank) {
+
     cli::cli_rule(left = paste("Processing Rank k =", k))
     vmsg("Running NMF for k = {k} ...")
     nmf_result <- run_nmf_for_rank(k, expr_matrix, nmf_method, nmf_nrun, nmf_seed, dirs$nmf_core, file_prefix)
 
-    if (is.null(nmf_result)) {
-      cli::cli_alert_warning("NMF result for k={k} is NULL — skipping downstream steps for this rank.")
-      next
+    if (!is.null(nmf_result)) {
+
+        # save path (in case run_nmf_for_rank didn't)
+        nmf_rds <- file.path(dirs$nmf_core, paste0("NMF_Result_Object_Rank_k", k, ".rds"))
+        if (file.exists(nmf_rds)) nmf_rds_paths[[as.character(k)]] <- nmf_rds
+
+        # Extract W and H
+        W <- NMF::basis(nmf_result)
+        H <- NMF::coef(nmf_result)
+
+        # --- Assign genes robustly (handle vector, list($predict), or membership matrix) ---
+        normalize_predict <- function(raw, expected_length, axis = c("features", "samples")) {
+          axis <- match.arg(axis)
+          if (is.list(raw) && "predict" %in% names(raw)) {
+            preds <- as.integer(raw$predict)
+          } else if (is.atomic(raw) && length(raw) == expected_length) {
+            preds <- as.integer(raw)
+          } else if (is.matrix(raw) && ncol(raw) >= 1 && nrow(raw) == expected_length) {
+            preds <- apply(raw, 1, which.max)
+          } else if (is.matrix(raw) && ncol(raw) >= 1 && ncol(raw) == expected_length) {
+            # fallback if transposed membership matrix
+            preds <- apply(raw, 2, which.max)
+          } else {
+            preds <- rep(NA_integer_, expected_length)
+          }
+          if (length(preds) != expected_length) {
+            preds <- preds[seq_len(min(length(preds), expected_length))]
+            if (length(preds) < expected_length) preds <- c(preds, rep(NA_integer_, expected_length - length(preds)))
+          }
+          return(as.integer(preds))
+        }
+
+        # gene predictions
+        raw_gene_pred <- tryCatch(
+          NMF::predict(nmf_result, what = "features", dmatrix = TRUE),
+          error = function(e) {
+            return(NULL)
+          }
+        )
+
+        gene_preds <- normalize_predict(raw_gene_pred, nrow(W), axis = "features")
+
+        basis_genes_df <- tibble::tibble(
+          Gene = rownames(W),
+          Factor = paste0("Factor_", gene_preds)
+        )
+
+        # Order by Factor first, then alphabetically within factor
+        basis_genes_df$Factor <- factor(
+          basis_genes_df$Factor,
+          levels = paste0("Factor_", 1:k)
+        )
+        basis_genes_df <- basis_genes_df[order(basis_genes_df$Factor, basis_genes_df$Gene), ]
+
+        # Ensure directory exists
+        dir.create(dirs$basis_genes, showWarnings = FALSE, recursive = TRUE)
+        readr::write_tsv(
+          basis_genes_df,
+          file.path(dirs$basis_genes, paste0("Basis_Genes_Rank_k", k, ".tsv"))
+        )
+
+        # Split into list
+        basis_genes_list <- split(basis_genes_df$Gene, basis_genes_df$Factor)
+
+
+        # --- Enrichment (use named args to avoid positional matching issues) ---
+        gost_objects_list <- perform_enrichment(
+          basis_genes_list = basis_genes_list,
+          organism = gprofiler_organism,
+          cutoff = gprofiler_cutoff,
+          correction = gprofiler_correction,
+          background_genes = final_nmf_genes,
+          sources = gprofiler_sources,
+          output_dir = dirs$enrichment,
+          k = k
+        )
+
+        # filter NULLs before binding
+        valid_gost_objects <- gost_objects_list[!sapply(gost_objects_list, is.null)]
+        all_gprofiler_results_dfs <- lapply(valid_gost_objects, function(gost_obj) gost_obj$result)
+        combined_gprofiler_df <- dplyr::bind_rows(all_gprofiler_results_dfs)
+
+        combined_enrichment_results_df <- perform_combined_enrichment(
+          basis_genes_list = basis_genes_list,
+          organism = gprofiler_organism,
+          cutoff = gprofiler_cutoff,
+          correction = gprofiler_correction,
+          background_genes = final_nmf_genes,
+          sources = gprofiler_sources,
+          output_dir = dirs$enrichment,
+          k = k
+        )
+        if (is.null(combined_enrichment_results_df)) combined_enrichment_results_df <- data.frame()
+
+        # --- Sample assignments ---
+        raw_sample_pred <- tryCatch(
+          NMF::predict(nmf_result, what = "samples", dmatrix = TRUE),
+          error = function(e) {
+            return(NULL)
+          }
+        )
+
+        sample_preds <- normalize_predict(raw_sample_pred, ncol(H), axis = "samples")
+
+        sample_assignments <- tibble::tibble(
+          SampleID = colnames(H),
+          Dominant_Factor = paste0("Factor_", sample_preds)
+        )
+
+        # Order by Factor first, then alphabetically within factor
+        sample_assignments$Dominant_Factor <- factor(
+          sample_assignments$Dominant_Factor,
+          levels = paste0("Factor_", 1:k)
+        )
+        sample_assignments <- sample_assignments[order(sample_assignments$Dominant_Factor,
+                                                       sample_assignments$SampleID), ]
+
+        dir.create(dirs$sample_assignments, showWarnings = FALSE, recursive = TRUE)
+        readr::write_tsv(
+          sample_assignments,
+          file.path(dirs$sample_assignments, paste0("Sample_Assignments_Rank_k", k, ".tsv"))
+        )
+
+        # --- Rank summary & plots ---
+        k_summary_df <- generate_rank_summary(k, W, H, sample_assignments, basis_genes_list, combined_gprofiler_df)
+        all_summaries_list[[as.character(k)]] <- k_summary_df
+
+        k_plots_dir <- file.path(dirs$plots, paste0("Rank_k", k))
+        dir.create(k_plots_dir, showWarnings = FALSE, recursive = TRUE)
+        generate_rank_plots(
+          k = k,
+          nmf_result = nmf_result,
+          sample_assignments = sample_assignments,
+          combined_gprofiler_df = combined_gprofiler_df,
+          combined_enrichment_results_df = combined_enrichment_results_df,
+          expr_matrix = expr_matrix,
+          basis_genes = basis_genes_list,
+          k_plots_dir = k_plots_dir,
+          file_prefix = file_prefix,
+          nrun = nmf_nrun,
+          top_n = enrichment_plot_top_n,
+          gost_objects_list = gost_objects_list
+        )
+      }
     }
+    # --- Finalize and Global Plots ---
+    cli::cli_h2("Step 4: Finalizing and Generating Global Summary Plots")
+    consolidated_summary_df <- if (length(all_summaries_list) > 0) dplyr::bind_rows(all_summaries_list) else tibble::tibble()
+    dir.create(dirs$summaries, showWarnings = FALSE, recursive = TRUE)
+    if (nrow(consolidated_summary_df) > 0) readr::write_tsv(consolidated_summary_df, file.path(dirs$summaries, "Consolidated_Summary.tsv"))
 
-    # save path (in case run_nmf_for_rank didn't)
-    nmf_rds <- file.path(dirs$nmf_core, paste0("NMF_Result_Object_Rank_k", k, ".rds"))
-    if (file.exists(nmf_rds)) nmf_rds_paths[[as.character(k)]] <- nmf_rds
+    # generate global plots (guard if summary empty)
+    tryCatch({
+      generate_global_plots(all_rank_metrics_df, consolidated_summary_df, nmf_rank, nmf_nrun, dirs, file_prefix)
+    }, error = function(e) {
+      cli::cli_alert_warning("generate_global_plots() failed: {conditionMessage(e)}")
+    })
 
-    # Extract W and H
-    W <- NMF::basis(nmf_result)
-    H <- NMF::coef(nmf_result)
+    time_end <- Sys.time()
+    runtime <- difftime(time_end, time_start)
+    cli::cli_alert_success("NMFprofileR Pipeline finished successfully in {format(runtime)}.")
 
-    # --- Assign genes robustly (handle vector, list($predict), or membership matrix) ---
-    normalize_predict <- function(raw, expected_length, axis = c("features", "samples")) {
-      axis <- match.arg(axis)
-      if (is.list(raw) && "predict" %in% names(raw)) {
-        preds <- as.integer(raw$predict)
-      } else if (is.atomic(raw) && length(raw) == expected_length) {
-        preds <- as.integer(raw)
-      } else if (is.matrix(raw) && ncol(raw) >= 1 && nrow(raw) == expected_length) {
-        preds <- apply(raw, 1, which.max)
-      } else if (is.matrix(raw) && ncol(raw) >= 1 && ncol(raw) == expected_length) {
-        # fallback if transposed membership matrix
-        preds <- apply(raw, 2, which.max)
-      } else {
-        preds <- rep(NA_integer_, expected_length)
-      }
-      if (length(preds) != expected_length) {
-        preds <- preds[seq_len(min(length(preds), expected_length))]
-        if (length(preds) < expected_length) preds <- c(preds, rep(NA_integer_, expected_length - length(preds)))
-      }
-      return(as.integer(preds))
-    }
-
-    # gene predictions
-    raw_gene_pred <- tryCatch(
-      NMF::predict(nmf_result, what = "features", dmatrix = TRUE),
-      error = function(e) {
-        dmsg("predict(features) error: {conditionMessage(e)}")
-        return(NULL)
-      }
+    # Return a programmatically useful list while keeping consolidated_summary_df as main item
+    result <- list(
+      consolidated_summary_df = consolidated_summary_df,
+      rank_metrics = all_rank_metrics_df,
+      nmf_rds = nmf_rds_paths,
+      output_dirs = dirs,
+      runtime = runtime
     )
 
-    gene_preds <- normalize_predict(raw_gene_pred, nrow(W), axis = "features")
-
-    basis_genes_df <- tibble::tibble(
-      Gene = rownames(W),
-      Factor = paste0("Factor_", gene_preds)
-    )
-
-    # Order by Factor first, then alphabetically within factor
-    basis_genes_df$Factor <- factor(
-      basis_genes_df$Factor,
-      levels = paste0("Factor_", 1:k)
-    )
-    basis_genes_df <- basis_genes_df[order(basis_genes_df$Factor, basis_genes_df$Gene), ]
-
-    # Ensure directory exists
-    dir.create(dirs$basis_genes, showWarnings = FALSE, recursive = TRUE)
-    readr::write_tsv(
-      basis_genes_df,
-      file.path(dirs$basis_genes, paste0("Basis_Genes_Rank_k", k, ".tsv"))
-    )
-
-    # Split into list
-    basis_genes_list <- split(basis_genes_df$Gene, basis_genes_df$Factor)
-
-
-    # --- Enrichment (use named args to avoid positional matching issues) ---
-    all_gprofiler_results <- perform_enrichment(
-      basis_genes_list = basis_genes_list,
-      organism = gprofiler_organism,
-      cutoff = gprofiler_cutoff,
-      correction = gprofiler_correction,
-      background_genes = final_nmf_genes,
-      sources = gprofiler_sources,
-      output_dir = dirs$enrichment,
-      k = k
-    )
-    # filter NULLs before binding
-    all_gprofiler_results <- Filter(Negate(is.null), all_gprofiler_results)
-    combined_gprofiler_df <- if (length(all_gprofiler_results) > 0) dplyr::bind_rows(all_gprofiler_results) else tibble::tibble()
-
-    combined_enrichment_results_df <- perform_combined_enrichment(
-      basis_genes_list = basis_genes_list,
-      organism = gprofiler_organism,
-      cutoff = gprofiler_cutoff,
-      correction = gprofiler_correction,
-      background_genes = final_nmf_genes,
-      sources = gprofiler_sources,
-      output_dir = dirs$enrichment,
-      k = k
-    )
-    if (is.null(combined_enrichment_results_df)) combined_enrichment_results_df <- data.frame()
-
-    # --- Sample assignments ---
-    raw_sample_pred <- tryCatch(
-      NMF::predict(nmf_result, what = "samples", dmatrix = TRUE),
-      error = function(e) {
-        dmsg("predict(samples) error: {conditionMessage(e)}")
-        return(NULL)
-      }
-    )
-
-    sample_preds <- normalize_predict(raw_sample_pred, ncol(H), axis = "samples")
-
-    sample_assignments <- tibble::tibble(
-      SampleID = colnames(H),
-      Dominant_Factor = paste0("Factor_", sample_preds)
-    )
-
-    # Order by Factor first, then alphabetically within factor
-    sample_assignments$Dominant_Factor <- factor(
-      sample_assignments$Dominant_Factor,
-      levels = paste0("Factor_", 1:k)
-    )
-    sample_assignments <- sample_assignments[order(sample_assignments$Dominant_Factor,
-                                                   sample_assignments$SampleID), ]
-
-    dir.create(dirs$sample_assignments, showWarnings = FALSE, recursive = TRUE)
-    readr::write_tsv(
-      sample_assignments,
-      file.path(dirs$sample_assignments, paste0("Sample_Assignments_Rank_k", k, ".tsv"))
-    )
-
-    # --- Rank summary & plots ---
-    k_summary_df <- generate_rank_summary(k, W, H, sample_assignments, basis_genes_list, combined_gprofiler_df)
-    all_summaries_list[[as.character(k)]] <- k_summary_df
-
-    k_plots_dir <- file.path(dirs$plots, paste0("Rank_k", k))
-    dir.create(k_plots_dir, showWarnings = FALSE, recursive = TRUE)
-    generate_rank_plots(k, nmf_result, sample_assignments, combined_gprofiler_df, combined_enrichment_results_df, expr_matrix, basis_genes_list, k_plots_dir, file_prefix, nmf_nrun, enrichment_plot_top_n)
-  }
-
-  # --- Finalize and Global Plots ---
-  cli::cli_h2("Step 4: Finalizing and Generating Global Summary Plots")
-  consolidated_summary_df <- if (length(all_summaries_list) > 0) dplyr::bind_rows(all_summaries_list) else tibble::tibble()
-  dir.create(dirs$summaries, showWarnings = FALSE, recursive = TRUE)
-  if (nrow(consolidated_summary_df) > 0) readr::write_tsv(consolidated_summary_df, file.path(dirs$summaries, "Consolidated_Summary.tsv"))
-
-  # generate global plots (guard if summary empty)
-  tryCatch({
-    generate_global_plots(all_rank_metrics_df, consolidated_summary_df, nmf_rank, nmf_nrun, dirs, file_prefix)
-  }, error = function(e) {
-    cli::cli_alert_warning("generate_global_plots() failed: {conditionMessage(e)}")
-    dmsg("generate_global_plots error: {conditionMessage(e)}")
-  })
-
-  time_end <- Sys.time()
-  runtime <- difftime(time_end, time_start)
-  cli::cli_alert_success("NMFprofileR Pipeline finished successfully in {format(runtime)}.")
-
-  # Return a programmatically useful list while keeping consolidated_summary_df as main item
-  result <- list(
-    consolidated_summary_df = consolidated_summary_df,
-    rank_metrics = all_rank_metrics_df,
-    nmf_rds = nmf_rds_paths,
-    output_dirs = dirs,
-    runtime = runtime
-  )
   invisible(result)
 }
