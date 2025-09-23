@@ -287,31 +287,38 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
   dir.create(heatmap_plots_dir, showWarnings = FALSE, recursive = TRUE)
 
   # --- Plot 1: Global Heatmap (all basis genes) ---
-  genes_for_global_heatmap <- unique(unlist(basis_genes))
-  if (length(genes_for_global_heatmap) > 1) {
-    mat_plot <- expr_matrix[genes_for_global_heatmap, , drop = FALSE]
-    # Scale data: log2 transform, then calculate row-wise Z-score
-    mat_scaled <- t(scale(t(log2(mat_plot + 1))))
-    mat_scaled[is.na(mat_scaled)] <- 0 # Handle cases with zero variance
-    # Cap the Z-scores for better color mapping
-    mat_scaled[mat_scaled > 2.5] <- 2.5
-    mat_scaled[mat_scaled < -2.5] <- -2.5
+  genes <- unique(unlist(basis_genes))
+  genes <- intersect(rownames(expr_matrix), genes)
 
-    ht_global <- ComplexHeatmap::Heatmap(
-      mat_scaled,
-      name = "Row Z-Score",
+  if (length(genes) > 1) {
+    W <- NMF::basis(nmf_result)   # genes x factors
+    H <- NMF::coef(nmf_result)    # factors x samples
+
+    # simple assignments
+    row_factor <- paste0("Factor_", apply(W[genes, , drop = FALSE], 1, which.max))
+    col_factor <- paste0("Factor_", apply(H, 2, which.max))
+
+    # prepare matrix (log transform if counts)
+    mat <- log2(expr_matrix[genes, , drop = FALSE] + 1)
+    mat <- t(scale(t(mat)))
+    mat[is.na(mat)] <- 0
+    mat[mat > 2.5] <- 2.5
+    mat[mat < -2.5] <- -2.5
+
+    ht <- ComplexHeatmap::Heatmap(
+      mat,
+      name = "Row Z-score",
       col = circlize::colorRamp2(c(-2.5, 0, 2.5), c("#3771c8", "white", "#ff9955")),
-      top_annotation = ha_col,
+      row_split = row_factor,
+      column_split = factor(col_factor, levels = unique(col_factor)),
+      cluster_rows = FALSE,
+      cluster_columns = FALSE,
       show_row_names = FALSE,
-      show_column_names = FALSE,
-      column_title = "All Basis Genes",
-      # Split rows and columns by their predicted factor for a structured view
-      row_split = NMF::predict(nmf_result, what = "features")[genes_for_global_heatmap],
-      column_split = NMF::predict(nmf_result, what = "samples")
+      show_column_names = FALSE
     )
 
     grDevices::pdf(file.path(heatmap_plots_dir, paste0("Expression_Heatmap_Global_Rank_k", k, ".pdf")), 8, 7)
-    ComplexHeatmap::draw(ht_global)
+    ComplexHeatmap::draw(ht)
     grDevices::dev.off()
   }
 
