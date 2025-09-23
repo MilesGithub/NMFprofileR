@@ -72,6 +72,11 @@ capture_plot <- function(plot_expression) {
 preprocess_matrix <- function(expression_data, threshold, v_quantile, filter_file) {
   expr_matrix <- as.matrix(expression_data)
 
+  if (any(!is.finite(expr_matrix))) {
+    cli::cli_alert_warning("Non-finite values (NA, NaN, Inf) detected. Imputing with 0.")
+    expr_matrix[!is.finite(expr_matrix)] <- 0
+  }
+
   if (!is.null(filter_file) && nzchar(filter_file) && file.exists(filter_file)) {
     cli::cli_alert_info("Applying gene filter list from: {.path {basename(filter_file)}}")
     gene_filter_list <- readr::read_lines(filter_file)
