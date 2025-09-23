@@ -266,62 +266,83 @@ perform_combined_enrichment <- function(basis_genes_list,
 
 #' Generate a Summary Data Frame for a Single NMF Rank
 #'
-#' This function calculates key statistics for each factor within a single NMF
+#' This internal function calculates key statistics for each factor within a single NMF
 #' rank, including sample counts, gene counts, sparsity, and enrichment counts.
+#' The enrichment source columns in the output will be ordered according to the
+#' `gprofiler_sources` parameter.
 #'
 #' @param k The current rank (integer).
 #' @param W The basis matrix (features x rank).
 #' @param H The coefficient matrix (rank x samples).
 #' @param sample_assignments A data frame mapping samples to factors.
 #' @param basis_genes_list A list of basis genes for each factor.
-#' @param combined_gprofiler_df A data frame of all per-factor enrichment results.
+#' @param combined_gprofiler_df A data frame of all per-factor enrichment results
+#'   from gprofiler2.
+#' @param gprofiler_sources A character vector of the g:Profiler sources that
+#'   were queried, used to order the final output columns.
 #'
 #' @return A data frame summarizing the results for rank `k`.
 #'
-#' @importFrom tidyselect where
+#' @importFrom tidyselect where all_of
 #' @noRd
-generate_rank_summary <- function(k, W, H, sample_assignments, basis_genes_list, combined_gprofiler_df) {
+generate_rank_summary <- function(k, W, H, sample_assignments, basis_genes_list,
+                                  combined_gprofiler_df, gprofiler_sources) {
+
+  # Process each factor individually and store results in a list
   summary_list <- lapply(1:k, function(i) {
     f_name <- paste0("Factor_", i)
 
-    # Safe counts for samples and basis genes
-    Num_Samples <- if (!is.null(sample_assignments) && "Dominant_Factor" %in% colnames(sample_assignments)) {
-      sum(sample_assignments$Dominant_Factor == f_name, na.rm = TRUE)
-    } else {
-      0L
-    }
-    Percent_Samples <- 100 * Num_Samples / max(1, if (!is.null(sample_assignments)) nrow(sample_assignments) else 1)
-
-    Num_Basis_Genes <- if (!is.null(basis_genes_list) && f_name %in% names(basis_genes_list)) {
-      length(basis_genes_list[[f_name]])
-    } else {
-      0L
-    }
-
-    enrich_counts <- if (nrow(combined_gprofiler_df) > 0 && "Factor" %in% names(combined_gprofiler_df)) {
+    # Count the number of significant terms per source for the current factor.
+    # This correctly filters by the 'query' column from the gprofiler2 result.
+    enrich_counts <- if (nrow(combined_gprofiler_df) > 0 && "query" %in% names(combined_gprofiler_df)) {
       combined_gprofiler_df %>%
-        dplyr::filter(.data$Factor == f_name) %>%
+        dplyr::filter(.data$query == f_name) %>%
         dplyr::count(.data$source) %>%
         tidyr::pivot_wider(names_from = "source", values_from = "n", values_fill = 0)
     } else {
-      tibble::tibble() # Return an empty tibble if no valid enrichment data exists
+      tibble::tibble() # Return an empty tibble if no enrichment data exists
     }
 
+    # Assemble the main summary statistics for the factor
     summary_row <- tibble::tibble(
       Factor = f_name,
-      Num_Samples = as.integer(Num_Samples),
-      Percent_Samples = as.numeric(Percent_Samples),
-      Num_Basis_Genes = as.integer(Num_Basis_Genes),
-      Basis_Sparsity = if (!is.null(W) && ncol(W) >= i) as.numeric(NMF::sparseness(W[, i])) else NA_real_,
-      Coef_Sparsity = if (!is.null(H) && nrow(H) >= i) as.numeric(NMF::sparseness(H[i, ])) else NA_real_
+      Num_Samples = sum(sample_assignments$Dominant_Factor == f_name, na.rm = TRUE),
+      Percent_Samples = 100 * .data$Num_Samples / max(1, nrow(sample_assignments)),
+      Num_Basis_Genes = length(basis_genes_list[[f_name]]),
+      Basis_Sparsity = NMF::sparseness(W[, i]),
+      Coef_Sparsity = NMF::sparseness(H[i, ])
     )
 
-    if (nrow(enrich_counts) > 0) dplyr::bind_cols(summary_row, enrich_counts) else summary_row
+    # Combine the main stats with the enrichment counts, if any were found
+    if (nrow(enrich_counts) > 0) {
+      dplyr::bind_cols(summary_row, enrich_counts)
+    } else {
+      summary_row
+    }
   })
 
-  res <- dplyr::bind_rows(summary_list)
-  res <- dplyr::mutate(res, Rank = k, .before = 1)
-  res <- dplyr::mutate(res, dplyr::across(where(is.numeric), ~tidyr::replace_na(., 0)))
-  return(res)
-}
+  # Combine summaries for all factors into a single data frame
+  combined_df <- dplyr::bind_rows(summary_list)
 
+  # Identify which of the user-provided source columns actually exist in our results.
+  # This handles cases where some sources might not have had any significant terms.
+  existing_source_cols <- intersect(gprofiler_sources, names(combined_df))
+
+  # Define the full, ordered set of columns based on user input
+  final_col_order <- c(
+    "Factor", "Num_Samples", "Percent_Samples", "Num_Basis_Genes",
+    "Basis_Sparsity", "Coef_Sparsity",
+    existing_source_cols
+  )
+
+  # Select and reorder the columns. `all_of()` ensures this works even if
+  # some expected columns are missing (e.g., no enrichment results at all).
+  # We also add any other unexpected columns to the end to be safe.
+  final_df <- combined_df %>%
+    dplyr::select(tidyselect::all_of(final_col_order), dplyr::everything())
+
+  # Add the Rank column at the beginning and clean up NAs in numeric columns
+  final_df %>%
+    dplyr::mutate(Rank = k, .before = 1) %>%
+    dplyr::mutate(dplyr::across(where(is.numeric), ~tidyr::replace_na(., 0)))
+}

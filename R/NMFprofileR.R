@@ -272,7 +272,15 @@ NMFprofileR <- function(
         )
 
         # --- Rank summary & plots ---
-        k_summary_df <- generate_rank_summary(k, W, H, sample_assignments, basis_genes_list, combined_gprofiler_df)
+        k_summary_df <- generate_rank_summary(
+          k = k,
+          W = W,
+          H = H,
+          sample_assignments = sample_assignments,
+          basis_genes_list = basis_genes_list,
+          combined_gprofiler_df = combined_gprofiler_df,
+          gprofiler_sources = gprofiler_sources
+        )
         all_summaries_list[[as.character(k)]] <- k_summary_df
 
         k_plots_dir <- file.path(dirs$plots, paste0("Rank_k", k))
