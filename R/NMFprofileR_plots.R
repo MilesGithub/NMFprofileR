@@ -362,7 +362,7 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
   if (nrun > 1) {
     # Capture and save Consensus Map
     cm_plot <- capture_plot({
-      NMF::consensusmap(nmf_result, main = paste("Consensus Map: k =", k))
+      NMF::consensusmap(nmf_result, main = paste("Consensus Map: k =", k), labCol = NA, labRow = NA)
     })
 
     pdf(file.path(k_plots_dir, paste0("01_ConsensusMap_Rank_k", k, ".pdf")), 8, 8)

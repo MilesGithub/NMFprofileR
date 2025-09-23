@@ -2,6 +2,7 @@
 
 export("%>%")
 export(NMFprofileR)
+importFrom(cluster,silhouette)
 importFrom(grDevices,dev.control)
 importFrom(grDevices,dev.off)
 importFrom(grDevices,pdf)

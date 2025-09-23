@@ -35,7 +35,8 @@ Imports:
     uwot,
     cli,
     magrittr,
-    tidyselect
+    tidyselect,
+    cluster
 RoxygenNote: 7.3.3
 Depends: 
     R (>= 3.5)

@@ -351,3 +351,94 @@ generate_rank_summary <- function(k, W, H, sample_assignments, basis_genes_list,
     dplyr::mutate(Rank = k, .before = 1) %>%
     dplyr::mutate(dplyr::across(where(is.numeric), ~tidyr::replace_na(., 0)))
 }
+
+
+# R/NMFprofileR_utils.R
+
+#' Compute sample silhouette widths robustly (internal)
+#'
+#' This helper computes per-sample silhouette widths from the NMF H matrix.
+#' It first tries correlation-based dissimilarity (1 - cor), and falls back to
+#' Euclidean distance on scaled H if needed. Returns a data.frame with SampleID
+#' and Silhouette_Width. Safe for package use (no NSE).
+#'
+#' @param H numeric matrix (factors x samples)
+#' @param sample_preds integer vector of cluster assignments (length = ncol(H))
+#' @param verbose logical, whether to print diagnostic messages
+#' @return data.frame with columns SampleID and Silhouette_Width
+#' @noRd
+compute_sample_silhouette_safe <- function(H, sample_preds, verbose = FALSE) {
+  Hm <- as.matrix(H)
+  n_samples <- ncol(Hm)
+
+  # sanity checks
+  if (length(sample_preds) != n_samples) {
+    stop("Length(sample_preds) != ncol(H). sample_preds must have one entry per sample.")
+  }
+  if (any(is.na(sample_preds))) {
+    if (verbose) message("sample_preds contains NA; returning NA silhouette widths.")
+    return(data.frame(SampleID = colnames(Hm), Silhouette_Width = NA_real_, stringsAsFactors = FALSE))
+  }
+  if (length(unique(sample_preds)) < 2) {
+    if (verbose) message("Only one cluster present; silhouette undefined -> returning NA.")
+    return(data.frame(SampleID = colnames(Hm), Silhouette_Width = NA_real_, stringsAsFactors = FALSE))
+  }
+
+  # TRY 1: correlation-based dissimilarity (1 - cor)
+  cor_mat <- tryCatch(stats::cor(t(Hm), use = "pairwise.complete.obs"), error = function(e) {
+    if (verbose) message("cor() failed: ", e$message)
+    NULL
+  })
+
+  dist_obj <- NULL
+  if (!is.null(cor_mat) && all(is.finite(cor_mat))) {
+    diag(cor_mat) <- 1
+    dist_obj <- tryCatch({
+      dtemp <- stats::as.dist(1 - cor_mat)
+      attr(dtemp, "Labels") <- colnames(Hm)
+      dtemp
+    }, error = function(e) {
+      if (verbose) message("as.dist(1-cor) failed: ", e$message)
+      NULL
+    })
+  } else {
+    if (verbose) message("Correlation matrix not finite; will fallback to Euclidean.")
+  }
+
+  # TRY 2: fallback to Euclidean distance on scaled H
+  if (is.null(dist_obj) || !inherits(dist_obj, "dist") || attr(dist_obj, "Size") != n_samples) {
+    if (verbose) message("Using Euclidean distance fallback on scaled H.")
+    scaled_H <- t(scale(t(Hm)))
+    if (any(!is.finite(scaled_H))) {
+      if (verbose) message("Scaling produced non-finite values; using raw H for distance.")
+      scaled_H <- Hm
+    }
+    dist_obj <- stats::dist(t(scaled_H), method = "euclidean")
+    attr(dist_obj, "Labels") <- colnames(Hm)
+  }
+
+  # final check
+  if (!inherits(dist_obj, "dist") || attr(dist_obj, "Size") != n_samples) {
+    if (verbose) message("Could not create a valid dist object for silhouette; returning NA widths.")
+    return(data.frame(SampleID = colnames(Hm), Silhouette = NA_real_, stringsAsFactors = FALSE))
+  }
+
+  # compute silhouette (cluster::silhouette is used explicitly)
+  sil_obj <- tryCatch({
+    cluster::silhouette(as.integer(sample_preds), dist_obj)
+  }, error = function(e) {
+    if (verbose) message("cluster::silhouette failed: ", e$message)
+    NULL
+  })
+
+  if (is.null(sil_obj)) {
+    return(data.frame(SampleID = colnames(Hm), Silhouette_Width = NA_real_, stringsAsFactors = FALSE))
+  }
+
+  sil_w <- as.numeric(sil_obj[, "sil_width"])
+  sample_ids <- rownames(sil_obj)
+  if (is.null(sample_ids) || length(sample_ids) == 0) sample_ids <- colnames(Hm)
+
+  data.frame(SampleID = sample_ids, Silhouette_Width = sil_w, stringsAsFactors = FALSE)
+}
+

@@ -39,6 +39,7 @@
 #' @param verbose A logical value. If TRUE, prints detailed messages. Defaults to TRUE.
 #'
 #' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
+#' @importFrom cluster silhouette
 #'
 #' @return A single data frame (`consolidated_summary_df`) containing a detailed
 #'   summary for every factor from every rank tested. All detailed results, plots,
@@ -243,29 +244,24 @@ NMFprofileR <- function(
         if (is.null(combined_enrichment_results_df)) combined_enrichment_results_df <- data.frame()
 
         # --- Sample assignments ---
-        raw_sample_pred <- tryCatch(
-          NMF::predict(nmf_result, what = "samples", dmatrix = TRUE),
-          error = function(e) {
-            return(NULL)
-          }
-        )
+        sample_preds <- as.integer(apply(H, 2, which.max))   # one integer per sample
+        sil_df <- compute_sample_silhouette_safe(H, sample_preds, verbose = FALSE)
 
-        sample_preds <- normalize_predict(raw_sample_pred, ncol(H), axis = "samples")
-
-        sample_assignments <- tibble::tibble(
+        # build sample_assignments (simple data.frame, no tibble NSE)
+        sample_assignments <- data.frame(
           SampleID = colnames(H),
-          Dominant_Factor = paste0("Factor_", sample_preds)
+          Dominant_Factor = paste0("Factor_", sample_preds),
+          stringsAsFactors = FALSE
         )
 
-        # Order by Factor first, then alphabetically within factor
-        sample_assignments$Dominant_Factor <- factor(
-          sample_assignments$Dominant_Factor,
-          levels = paste0("Factor_", 1:k)
-        )
-        sample_assignments <- sample_assignments[order(sample_assignments$Dominant_Factor,
-                                                       sample_assignments$SampleID), ]
+        # Merge silhouette widths (left join semantics)
+        sample_assignments <- merge(sample_assignments, sil_df, by = "SampleID", all.x = TRUE, sort = FALSE)
 
-        dir.create(dirs$sample_assignments, showWarnings = FALSE, recursive = TRUE)
+        # Order by Factor then SampleID for tidy output
+        sample_assignments$Dominant_Factor <- factor(sample_assignments$Dominant_Factor, levels = paste0("Factor_", 1:k))
+        sample_assignments <- sample_assignments[order(sample_assignments$Dominant_Factor, sample_assignments$SampleID), ]
+
+        # Save
         readr::write_tsv(
           sample_assignments,
           file.path(dirs$sample_assignments, paste0("Sample_Assignments_Rank_k", k, ".tsv"))
