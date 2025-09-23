@@ -353,92 +353,79 @@ generate_rank_summary <- function(k, W, H, sample_assignments, basis_genes_list,
 }
 
 
-# R/NMFprofileR_utils.R
-
-#' Compute sample silhouette widths robustly (internal)
+#' Compute per-sample silhouette width from NMF consensus matrix
 #'
-#' This helper computes per-sample silhouette widths from the NMF H matrix.
-#' It first tries correlation-based dissimilarity (1 - cor), and falls back to
-#' Euclidean distance on scaled H if needed. Returns a data.frame with SampleID
-#' and Silhouette_Width. Safe for package use (no NSE).
+#' This function calculates sample-level silhouette widths using the consensus
+#' matrix from an NMF run (with nrun > 1). It mirrors the silhouette values
+#' shown in NMF consensus maps.
 #'
-#' @param H numeric matrix (factors x samples)
-#' @param sample_preds integer vector of cluster assignments (length = ncol(H))
-#' @param verbose logical, whether to print diagnostic messages
-#' @return data.frame with columns SampleID and Silhouette_Width
-#' @noRd
-compute_sample_silhouette_safe <- function(H, sample_preds, verbose = FALSE) {
-  Hm <- as.matrix(H)
-  n_samples <- ncol(Hm)
-
-  # sanity checks
-  if (length(sample_preds) != n_samples) {
-    stop("Length(sample_preds) != ncol(H). sample_preds must have one entry per sample.")
-  }
-  if (any(is.na(sample_preds))) {
-    if (verbose) message("sample_preds contains NA; returning NA silhouette widths.")
-    return(data.frame(SampleID = colnames(Hm), Silhouette_Width = NA_real_, stringsAsFactors = FALSE))
-  }
-  if (length(unique(sample_preds)) < 2) {
-    if (verbose) message("Only one cluster present; silhouette undefined -> returning NA.")
-    return(data.frame(SampleID = colnames(Hm), Silhouette_Width = NA_real_, stringsAsFactors = FALSE))
-  }
-
-  # TRY 1: correlation-based dissimilarity (1 - cor)
-  cor_mat <- tryCatch(stats::cor(t(Hm), use = "pairwise.complete.obs"), error = function(e) {
-    if (verbose) message("cor() failed: ", e$message)
-    NULL
-  })
-
-  dist_obj <- NULL
-  if (!is.null(cor_mat) && all(is.finite(cor_mat))) {
-    diag(cor_mat) <- 1
-    dist_obj <- tryCatch({
-      dtemp <- stats::as.dist(1 - cor_mat)
-      attr(dtemp, "Labels") <- colnames(Hm)
-      dtemp
-    }, error = function(e) {
-      if (verbose) message("as.dist(1-cor) failed: ", e$message)
-      NULL
-    })
-  } else {
-    if (verbose) message("Correlation matrix not finite; will fallback to Euclidean.")
-  }
-
-  # TRY 2: fallback to Euclidean distance on scaled H
-  if (is.null(dist_obj) || !inherits(dist_obj, "dist") || attr(dist_obj, "Size") != n_samples) {
-    if (verbose) message("Using Euclidean distance fallback on scaled H.")
-    scaled_H <- t(scale(t(Hm)))
-    if (any(!is.finite(scaled_H))) {
-      if (verbose) message("Scaling produced non-finite values; using raw H for distance.")
-      scaled_H <- Hm
+#' @param nmf_result An NMFfit object (result of NMF::nmf).
+#' @param H The NMF coefficient matrix (factors x samples).
+#' @param k Integer, the rank of the factorization.
+#' @param verbose Logical, whether to print diagnostic messages.
+#'
+#' @return A data frame with columns:
+#' \itemize{
+#'   \item SampleID – sample names (colnames of H).
+#'   \item Silhouette_NMF – silhouette width for each sample (NA if unavailable).
+#' }
+#'
+#' @importFrom NMF consensus predict
+#' @importFrom stats as.dist dist
+#' @importFrom cluster silhouette
+#'
+#' @keywords internal
+compute_sample_silhouette <- function(nmf_result, H, k, verbose = FALSE) {
+  tryCatch({
+    # Consensus matrix
+    cons_mat <- tryCatch(NMF::consensus(nmf_result), error = function(e) NULL)
+    if (is.null(cons_mat) || !is.matrix(cons_mat) || nrow(cons_mat) < 2) {
+      if (verbose) message(sprintf("[k=%d] Consensus matrix not available. Returning NA.", k))
+      return(data.frame(SampleID = colnames(H), Silhouette_NMF = NA_real_))
     }
-    dist_obj <- stats::dist(t(scaled_H), method = "euclidean")
-    attr(dist_obj, "Labels") <- colnames(Hm)
-  }
 
-  # final check
-  if (!inherits(dist_obj, "dist") || attr(dist_obj, "Size") != n_samples) {
-    if (verbose) message("Could not create a valid dist object for silhouette; returning NA widths.")
-    return(data.frame(SampleID = colnames(Hm), Silhouette = NA_real_, stringsAsFactors = FALSE))
-  }
+    # Assign row/col names if missing
+    if (is.null(colnames(cons_mat)) || is.null(rownames(cons_mat))) {
+      colnames(cons_mat) <- rownames(cons_mat) <- colnames(H)
+    }
 
-  # compute silhouette (cluster::silhouette is used explicitly)
-  sil_obj <- tryCatch({
-    cluster::silhouette(as.integer(sample_preds), dist_obj)
+    # Distance from consensus
+    dist_cons <- stats::as.dist(1 - cons_mat)
+
+    # Predicted sample clusters
+    sample_labels <- NMF::predict(nmf_result, what = "samples")
+    if (is.factor(sample_labels) || is.character(sample_labels)) {
+      parsed <- suppressWarnings(as.integer(gsub(".*?(\\d+)$", "\\1", as.character(sample_labels))))
+      if (all(is.finite(parsed))) {
+        sample_labels_int <- parsed
+      } else {
+        sample_labels_int <- as.integer(as.factor(sample_labels))
+      }
+    } else {
+      sample_labels_int <- as.integer(sample_labels)
+    }
+
+    # Align length
+    if (length(sample_labels_int) != attr(dist_cons, "Size")) {
+      if (verbose) message(sprintf("[k=%d] Label length mismatch. Returning NA.", k))
+      return(data.frame(SampleID = colnames(H), Silhouette_NMF = NA_real_))
+    }
+
+    # At least 2 clusters required
+    if (length(unique(sample_labels_int)) < 2) {
+      if (verbose) message(sprintf("[k=%d] Only one cluster present. Returning NA.", k))
+      return(data.frame(SampleID = colnames(H), Silhouette_NMF = NA_real_))
+    }
+
+    # Compute silhouette
+    sil_obj <- cluster::silhouette(sample_labels_int, dist_cons)
+    sil_w <- as.numeric(sil_obj[, "sil_width"])
+    sample_ids <- rownames(sil_obj)
+    if (is.null(sample_ids) || length(sample_ids) == 0) sample_ids <- colnames(H)
+
+    data.frame(SampleID = sample_ids, Silhouette_NMF = sil_w, stringsAsFactors = FALSE)
   }, error = function(e) {
-    if (verbose) message("cluster::silhouette failed: ", e$message)
-    NULL
+    if (verbose) message(sprintf("[k=%d] Silhouette computation failed: %s", k, e$message))
+    data.frame(SampleID = colnames(H), Silhouette_NMF = NA_real_)
   })
-
-  if (is.null(sil_obj)) {
-    return(data.frame(SampleID = colnames(Hm), Silhouette_Width = NA_real_, stringsAsFactors = FALSE))
-  }
-
-  sil_w <- as.numeric(sil_obj[, "sil_width"])
-  sample_ids <- rownames(sil_obj)
-  if (is.null(sample_ids) || length(sample_ids) == 0) sample_ids <- colnames(Hm)
-
-  data.frame(SampleID = sample_ids, Silhouette_Width = sil_w, stringsAsFactors = FALSE)
 }
-

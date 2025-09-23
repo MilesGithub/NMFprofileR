@@ -244,22 +244,36 @@ NMFprofileR <- function(
         if (is.null(combined_enrichment_results_df)) combined_enrichment_results_df <- data.frame()
 
         # --- Sample assignments ---
-        sample_preds <- as.integer(apply(H, 2, which.max))   # one integer per sample
-        sil_df <- compute_sample_silhouette_safe(H, sample_preds, verbose = FALSE)
-
-        # build sample_assignments (simple data.frame, no tibble NSE)
-        sample_assignments <- data.frame(
+        sample_assignments <- tibble::tibble(
           SampleID = colnames(H),
-          Dominant_Factor = paste0("Factor_", sample_preds),
-          stringsAsFactors = FALSE
+          Dominant_Factor = paste0("Factor_", apply(H, 2, which.max))
         )
 
-        # Merge silhouette widths (left join semantics)
-        sample_assignments <- merge(sample_assignments, sil_df, by = "SampleID", all.x = TRUE, sort = FALSE)
+        # --- Silhouette values ---
+        silhouette_df <- compute_sample_silhouette(nmf_result, H, k, verbose = TRUE)
 
-        # Order by Factor then SampleID for tidy output
-        sample_assignments$Dominant_Factor <- factor(sample_assignments$Dominant_Factor, levels = paste0("Factor_", 1:k))
-        sample_assignments <- sample_assignments[order(sample_assignments$Dominant_Factor, sample_assignments$SampleID), ]
+        # Merge
+        sample_assignments <- merge(
+          sample_assignments,
+          silhouette_df,
+          by = "SampleID",
+          all.x = TRUE,
+          sort = FALSE
+        )
+
+        # Order: Factor → Silhouette (descending) → SampleID
+        sample_assignments$Dominant_Factor <- factor(
+          sample_assignments$Dominant_Factor,
+          levels = paste0("Factor_", 1:k)
+        )
+
+        sample_assignments <- sample_assignments[
+          order(
+            sample_assignments$Dominant_Factor,
+            -sample_assignments$Silhouette_NMF,
+            sample_assignments$SampleID
+          ),
+        ]
 
         # Save
         readr::write_tsv(
