@@ -96,3 +96,15 @@ expression matrix to performing a multi-rank NMF analysis, extracting basis
 genes, running functional enrichment, and generating a comprehensive suite of
 visualizations and summary reports.
 }
+\section{Reproducibility}{
+
+For a fixed `nmf_seed` the NMF factorization is deterministic and yields
+identical basis and coefficient matrices whether NMF runs sequentially or
+across a parallel backend, within a fixed computational environment. Exact
+numerical reproducibility across machines can still be affected by the BLAS
+implementation and threading. Every run also writes a manifest and session
+information (surfaced in the `provenance` element of the return value) so a
+result can be traced to the parameters and g:Profiler database snapshot that
+produced it.
+}
+
