@@ -60,14 +60,22 @@
 #' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
 #' @importFrom cluster silhouette
 #'
-#' @return Invisibly, a named list with six elements:
+#' @return Invisibly, an S3 object of class `nmf_profile` (a list underneath, so
+#'   `$` access works) with `print()` and `summary()` methods. Elements:
 #'   \describe{
 #'     \item{`consolidated_summary_df`}{A data frame summarizing every factor
 #'       from every rank tested.}
 #'     \item{`rank_metrics`}{A data frame of quality metrics from the
 #'       `NMF::nmfEstimateRank` rank survey (empty if the survey failed).}
-#'     \item{`nmf_rds`}{A named list of file paths to the saved NMF fit objects,
-#'       keyed by rank.}
+#'     \item{`fits`}{A named list of the fitted `NMFfit` objects, keyed by rank.}
+#'     \item{`basis_genes`}{A named list of per-rank basis-gene tables
+#'       (gene to dominant factor).}
+#'     \item{`sample_assignments`}{A named list of per-rank sample-assignment
+#'       tables (sample to dominant factor, with silhouette widths).}
+#'     \item{`enrichment`}{A list with `per_factor` and `combined` named lists of
+#'       per-rank g:Profiler enrichment data frames.}
+#'     \item{`nmf_rds`}{A named list of file paths to the saved NMF fit objects
+#'       (empty when `write_files = FALSE`).}
 #'     \item{`output_dirs`}{A named list of the output directories created for
 #'       the run, or `NULL` when `write_files = FALSE`.}
 #'     \item{`runtime`}{A `difftime` giving the total pipeline runtime.}
@@ -200,6 +208,13 @@ NMFprofileR <- function(
   nmf_rds_paths <- list()
   gprofiler_version <- NA_character_  # captured from the first enrichment result
 
+  # In-memory accumulators (returned so callers need not re-read files)
+  fits_by_rank <- list()
+  basis_genes_by_rank <- list()
+  sample_assignments_by_rank <- list()
+  enrichment_per_factor_by_rank <- list()
+  enrichment_combined_by_rank <- list()
+
   for (k in nmf_rank) {
 
     cli::cli_rule(left = paste("Processing Rank k =", k))
@@ -208,6 +223,8 @@ NMFprofileR <- function(
                                    write_files = write_files)
 
     if (!is.null(nmf_result)) {
+
+        fits_by_rank[[as.character(k)]] <- nmf_result
 
         # save path (in case run_nmf_for_rank didn't)
         nmf_rds <- file.path(dirs$nmf_core, paste0("NMF_Result_Object_Rank_k", k, ".rds"))
@@ -219,6 +236,7 @@ NMFprofileR <- function(
 
         # --- Assign genes to their dominant factor (composable stage) ---
         basis_genes_df <- nmf_basis_genes(nmf_result)
+        basis_genes_by_rank[[as.character(k)]] <- basis_genes_df
 
         if (isTRUE(write_files)) {
           dir.create(dirs$basis_genes, showWarnings = FALSE, recursive = TRUE)
@@ -268,9 +286,12 @@ NMFprofileR <- function(
           write_files = write_files
         )
         if (is.null(combined_enrichment_results_df)) combined_enrichment_results_df <- data.frame()
+        enrichment_per_factor_by_rank[[as.character(k)]] <- combined_gprofiler_df
+        enrichment_combined_by_rank[[as.character(k)]] <- combined_enrichment_results_df
 
         # --- Sample assignments + silhouette (composable stage) ---
         sample_assignments <- nmf_sample_assignments(nmf_result, verbose = TRUE)
+        sample_assignments_by_rank[[as.character(k)]] <- sample_assignments
 
         # Save
         if (isTRUE(write_files)) {
@@ -363,15 +384,26 @@ NMFprofileR <- function(
     log_line("Run finished in ", format(runtime), "; ",
              length(all_summaries_list), " rank(s) completed.")
 
-    # Return a programmatically useful list while keeping consolidated_summary_df as main item
+    # Assemble the in-memory result. Keeps all previously documented elements
+    # (so `$consolidated_summary_df` etc. still work) and adds the fitted
+    # objects, assignments, and enrichment tables so callers need not re-read
+    # files. Returned as an S3 `nmf_profile` (a list underneath).
     result <- list(
       consolidated_summary_df = consolidated_summary_df,
       rank_metrics = all_rank_metrics_df,
+      fits = fits_by_rank,
+      basis_genes = basis_genes_by_rank,
+      sample_assignments = sample_assignments_by_rank,
+      enrichment = list(
+        per_factor = enrichment_per_factor_by_rank,
+        combined   = enrichment_combined_by_rank
+      ),
       nmf_rds = nmf_rds_paths,
       output_dirs = if (isTRUE(write_files)) dirs else NULL,
       runtime = runtime,
       provenance = provenance
     )
+    class(result) <- "nmf_profile"
 
   invisible(result)
 }

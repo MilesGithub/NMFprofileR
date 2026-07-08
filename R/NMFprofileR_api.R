@@ -188,3 +188,38 @@ nmf_enrichment <- function(basis_genes_list,
   )
   list(per_factor = per_factor, combined = combined)
 }
+
+#' Print an NMFprofileR result
+#'
+#' @param x An `nmf_profile` object returned (invisibly) by [NMFprofileR()].
+#' @param ... Ignored.
+#' @return `x`, invisibly.
+#' @export
+print.nmf_profile <- function(x, ...) {
+  ranks <- names(x$fits)
+  n_samples <- if (length(x$sample_assignments)) nrow(x$sample_assignments[[1]]) else NA_integer_
+  ver <- x$provenance$gprofiler_version
+
+  cat("<nmf_profile>\n")
+  cat(sprintf("  Ranks fitted : %s\n", if (length(ranks)) paste(ranks, collapse = ", ") else "none"))
+  cat(sprintf("  Samples      : %s\n", n_samples))
+  cat(sprintf("  Runtime      : %s\n", format(x$runtime)))
+  cat(sprintf("  g:Profiler   : %s\n", if (is.null(ver) || is.na(ver)) "not captured" else ver))
+  if (is.null(x$output_dirs)) {
+    cat("  Output       : in memory only (write_files = FALSE)\n")
+  } else {
+    cat(sprintf("  Output dir   : %s\n", x$output_dirs$main))
+  }
+  cat("  Access $fits, $basis_genes, $sample_assignments, $enrichment, $consolidated_summary_df\n")
+  invisible(x)
+}
+
+#' Summarize an NMFprofileR result
+#'
+#' @param object An `nmf_profile` object from [NMFprofileR()].
+#' @param ... Ignored.
+#' @return The consolidated per-factor summary data frame across all ranks.
+#' @export
+summary.nmf_profile <- function(object, ...) {
+  object$consolidated_summary_df
+}

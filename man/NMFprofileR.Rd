@@ -83,14 +83,22 @@ per-sample maximum across duplicate rows (the most expressed probe),
 `"collapse_mean"` averages them, and `"error"` stops with a message.}
 }
 \value{
-Invisibly, a named list with six elements:
+Invisibly, an S3 object of class `nmf_profile` (a list underneath, so
+  `$` access works) with `print()` and `summary()` methods. Elements:
   \describe{
     \item{`consolidated_summary_df`}{A data frame summarizing every factor
       from every rank tested.}
     \item{`rank_metrics`}{A data frame of quality metrics from the
       `NMF::nmfEstimateRank` rank survey (empty if the survey failed).}
-    \item{`nmf_rds`}{A named list of file paths to the saved NMF fit objects,
-      keyed by rank.}
+    \item{`fits`}{A named list of the fitted `NMFfit` objects, keyed by rank.}
+    \item{`basis_genes`}{A named list of per-rank basis-gene tables
+      (gene to dominant factor).}
+    \item{`sample_assignments`}{A named list of per-rank sample-assignment
+      tables (sample to dominant factor, with silhouette widths).}
+    \item{`enrichment`}{A list with `per_factor` and `combined` named lists of
+      per-rank g:Profiler enrichment data frames.}
+    \item{`nmf_rds`}{A named list of file paths to the saved NMF fit objects
+      (empty when `write_files = FALSE`).}
     \item{`output_dirs`}{A named list of the output directories created for
       the run, or `NULL` when `write_files = FALSE`.}
     \item{`runtime`}{A `difftime` giving the total pipeline runtime.}

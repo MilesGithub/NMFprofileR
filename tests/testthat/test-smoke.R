@@ -24,12 +24,15 @@ test_that("NMFprofileR() runs end-to-end on the example data", {
     verbose              = FALSE
   )
 
-  expect_type(res, "list")
-  expect_named(
-    res,
-    c("consolidated_summary_df", "rank_metrics", "nmf_rds", "output_dirs", "runtime")
-  )
+  expect_s3_class(res, "nmf_profile")
+  expect_true(all(
+    c("consolidated_summary_df", "rank_metrics", "fits", "basis_genes",
+      "sample_assignments", "enrichment", "provenance") %in% names(res)
+  ))
   expect_s3_class(res$consolidated_summary_df, "data.frame")
   expect_gt(nrow(res$consolidated_summary_df), 0)
+  # in-memory objects are returned, keyed by rank
+  expect_named(res$fits, c("2", "3"))
+  expect_equal(nrow(res$sample_assignments[["2"]]), ncol(example_expression_data))
   expect_true(dir.exists(paste0(out_prefix, "_Results")))
 })

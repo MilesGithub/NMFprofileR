@@ -34,3 +34,23 @@ test_that("the composable stages round-trip a fit", {
   expect_equal(nrow(sa), ncol(m))
   expect_true(all(c("SampleID", "Dominant_Factor", "Silhouette_NMF") %in% names(sa)))
 })
+
+test_that("nmf_profile print and summary methods work", {
+  obj <- structure(
+    list(
+      consolidated_summary_df = data.frame(Rank = 2L, Factor = "Factor_1"),
+      fits = list("2" = NULL),
+      sample_assignments = list("2" = data.frame(SampleID = c("a", "b"))),
+      output_dirs = NULL,
+      runtime = as.difftime(1, units = "mins"),
+      provenance = list(gprofiler_version = "e111_test")
+    ),
+    class = "nmf_profile"
+  )
+
+  out <- capture.output(print(obj))
+  expect_true(any(grepl("nmf_profile", out)))
+  expect_true(any(grepl("in memory only", out)))   # output_dirs is NULL
+  expect_true(any(grepl("e111_test", out)))
+  expect_identical(summary(obj), obj$consolidated_summary_df)
+})
