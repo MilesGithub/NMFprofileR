@@ -1,0 +1,203 @@
+# NMFprofileR
+
+[![R-CMD-check](https://github.com/MilesGithub/NMFprofileR/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/MilesGithub/NMFprofileR/actions/workflows/R-CMD-check.yaml)  
+[![License:
+MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://milesgithub.github.io/NMFprofileR/LICENSE)
+
+------------------------------------------------------------------------
+
+## Overview
+
+**NMFprofileR** is an R package for comprehensive multi-rank
+Non-negative Matrix Factorization (NMF) analysis of transcriptomic data.
+It provides automated rank estimation, factor-specific gene assignment,
+gene set enrichment analysis, and publication-quality plots for
+consolidated summary and consensus maps.
+
+------------------------------------------------------------------------
+
+## Features
+
+- Multi-rank NMF with reproducible results (`brunet`, `lee`, and
+  others).
+- Composable, exported pipeline stages returning results in memory, and
+  an `nmf_profile` result object.
+- Per-factor basis gene assignment (argmax) plus specificity-scored
+  marker genes.
+- Automated generation of rank survey/diagnostics plots, consensus maps,
+  factor correspondence heatmaps, and consolidated summary metrics.
+- Supports user-defined gene backgrounds for enrichment analysis.
+- Reproducibility: run manifest, g:Profiler database version, and
+  session info.
+
+------------------------------------------------------------------------
+
+## Installation
+
+Install directly from GitHub using `devtools`. NMFprofileR depends on
+the Bioconductor packages `ComplexHeatmap` and `circlize`, so make the
+Bioconductor repositories available first (otherwise the install fails
+to resolve them):
+
+``` R
+# install.packages(c("devtools", "BiocManager"))
+setRepositories(ind = c(1, 2))   # enable CRAN + Bioconductor
+# or: options(repos = BiocManager::repositories())
+
+devtools::install_github("MilesGithub/NMFprofileR")
+```
+
+------------------------------------------------------------------------
+
+## Usage
+
+``` R
+library(NMFprofileR)
+
+# Load example expression data (genes x samples)
+data("example_expression_data")
+
+# Run the NMFprofileR pipeline
+result <- NMFprofileR(
+  expression_data          = example_expression_data,
+  nmf_rank                 = 2:5,
+  output_prefix            = "results/NMF",
+  nmf_method               = "brunet",
+  nmf_nrun                 = 20,
+  gprofiler_organism       = "hsapiens",
+  gprofiler_sources        = c("GO:BP","GO:MF","GO:CC","REAC","TF"),
+  gprofiler_cutoff         = 0.05
+)
+```
+
+[`NMFprofileR()`](https://milesgithub.github.io/NMFprofileR/reference/NMFprofileR.md)
+returns an `nmf_profile` object that carries the results in memory (in
+addition to writing them to disk):
+
+``` R
+result                       # compact overview (print method)
+summary(result)              # consolidated per-factor metrics across ranks
+result$fits[["3"]]           # fitted NMF object for k = 3
+result$basis_genes[["3"]]    # gene -> dominant factor table
+result$marker_genes[["3"]]   # factor-specific marker genes
+```
+
+Set `write_files = FALSE` to compute entirely in memory without creating
+files.
+
+The pipeline stages are also exported for composable use:
+[`nmf_preprocess()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_preprocess.md),
+[`nmf_fit()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_fit.md),
+[`nmf_basis_genes()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_basis_genes.md),
+[`nmf_marker_genes()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_marker_genes.md),
+[`nmf_sample_assignments()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_sample_assignments.md),
+[`nmf_enrichment()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_enrichment.md),
+and
+[`nmf_rank_diagnostics()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_rank_diagnostics.md).
+
+------------------------------------------------------------------------
+
+## Output
+
+With `output_prefix = "results/NMF"` the pipeline writes to
+`results/NMF_Results/`:
+
+- `NMF_Core_Objects/` — fitted NMF objects per rank (`.rds`).  
+- `Basis_Genes/` — per-factor gene assignments and marker genes.  
+- `Enrichment_Results/` — per-factor and combined enrichment tables.  
+- `Sample_Assignments/` — sample-to-factor assignments with silhouette
+  widths.  
+- `Plots/` — heatmaps, consensus/diagnostic maps, UMAP, and enrichment
+  plots.  
+- `Summaries/` — consolidated summary, run manifest, and session info.
+
+------------------------------------------------------------------------
+
+## Example Plots
+
+- **Rank Survey Plot** – metrics across tested ranks.  
+- **Consensus Map** – reproducibility of factorization.  
+- **Factor Correspondence Heatmap** – identifies similar factors across
+  ranks.  
+- **Consolidated Summary Heatmap** – combined factor-level metrics for
+  all ranks.
+
+------------------------------------------------------------------------
+
+## Citation
+
+``` R
+Miles Mee, 2025. NMFprofileR: Comprehensive multi-rank NMF analysis and enrichment in R. GitHub repository: https://github.com/MilesGithub/NMFprofileR
+```
+
+Also cite underlying methods:
+
+- Gaujoux, R., & Seoighe, C. (2010). A flexible R package for
+  nonnegative matrix factorization. *BMC Bioinformatics*, 11, 367.  
+- Raudvere, U., Kolberg, L., Kuzmin, I., Arak, T., Adler, P., Peterson,
+  H., & Vilo, J. (2019). g:Profiler: a web server for functional
+  enrichment analysis and conversions of gene lists. *Nucleic Acids
+  Research*, 47(W1), W191–W198.
+
+------------------------------------------------------------------------
+
+## License
+
+MIT License — see
+[LICENSE](https://milesgithub.github.io/NMFprofileR/LICENSE).
+
+------------------------------------------------------------------------
+
+## Contact
+
+Open an issue on GitHub or contact **Miles Mee** at
+**<miles.william.mee@gmail.com>**.
+
+# Package index
+
+## Pipeline
+
+The end-to-end orchestrator.
+
+- [`NMFprofileR()`](https://milesgithub.github.io/NMFprofileR/reference/NMFprofileR.md)
+  : Perform a Full Multi-Rank NMF and Functional Enrichment Analysis
+
+## Composable stages
+
+Individual, in-memory pipeline steps.
+
+- [`nmf_preprocess()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_preprocess.md)
+  : Preprocess an expression matrix for NMF
+- [`nmf_fit()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_fit.md)
+  : Fit consensus NMF at a single rank
+- [`nmf_basis_genes()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_basis_genes.md)
+  : Assign genes to their dominant NMF factor
+- [`nmf_marker_genes()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_marker_genes.md)
+  : Extract factor-specific marker genes by specificity score
+- [`nmf_sample_assignments()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_sample_assignments.md)
+  : Assign samples to their dominant NMF factor with silhouette widths
+- [`nmf_enrichment()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_enrichment.md)
+  : Run g:Profiler enrichment on NMF factor gene sets
+- [`nmf_rank_diagnostics()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_rank_diagnostics.md)
+  : Tidy NMF rank-selection diagnostics
+
+## Result object
+
+The nmf_profile S3 object.
+
+- [`print(`*`<nmf_profile>`*`)`](https://milesgithub.github.io/NMFprofileR/reference/print.nmf_profile.md)
+  : Print an NMFprofileR result
+- [`summary(`*`<nmf_profile>`*`)`](https://milesgithub.github.io/NMFprofileR/reference/summary.nmf_profile.md)
+  : Summarize an NMFprofileR result
+
+## Data
+
+- [`example_expression_data`](https://milesgithub.github.io/NMFprofileR/reference/example_expression_data.md)
+  : Example Expression Data for NMFprofileR
+
+# Articles
+
+### All vignettes
+
+- [Getting started with
+  NMFprofileR](https://milesgithub.github.io/NMFprofileR/articles/NMFprofileR-vignette.md):
