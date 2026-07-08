@@ -68,11 +68,18 @@ capture_plot <- function(plot_expression) {
 #' @param threshold Numeric value for mean expression filtering.
 #' @param v_quantile Numeric value (0-1) for variance filtering.
 #' @param filter_file A character string path to an optional gene list file.
+#' @param variance_scale Either `"raw"` (default) or `"log"`. Controls the scale
+#'   on which gene variance is measured for the highly-variable-gene filter.
+#'   `"log"` ranks genes by variance on `log2(x + 1)`, which reduces the
+#'   mean-variance confound of raw-count data; the returned matrix is always on
+#'   the original (raw, non-negative) scale that is fed to NMF.
 #'
 #' @return A numeric matrix that has been filtered and is ready for NMF.
 #'
 #' @noRd
-preprocess_matrix <- function(expression_data, threshold, v_quantile, filter_file) {
+preprocess_matrix <- function(expression_data, threshold, v_quantile, filter_file,
+                              variance_scale = c("raw", "log")) {
+  variance_scale <- match.arg(variance_scale)
   expr_matrix <- as.matrix(expression_data)
 
   if (any(!is.finite(expr_matrix))) {
@@ -92,8 +99,11 @@ preprocess_matrix <- function(expression_data, threshold, v_quantile, filter_fil
   expr_matrix <- expr_matrix[rowMeans(expr_matrix, na.rm = TRUE) >= threshold, , drop = FALSE]
 
   if (nrow(expr_matrix) > 1) {
-    cli::cli_alert_info("Filtering genes by variance < {v_quantile} quantile...")
-    gene_vars <- apply(expr_matrix, 1, stats::var, na.rm = TRUE)
+    cli::cli_alert_info("Filtering genes by variance < {v_quantile} quantile ({variance_scale} scale)...")
+    # Variance is measured on the requested scale; selection still returns rows
+    # from the original (raw) matrix that is fed to NMF.
+    var_input <- if (identical(variance_scale, "log")) log2(pmax(expr_matrix, 0) + 1) else expr_matrix
+    gene_vars <- apply(var_input, 1, stats::var, na.rm = TRUE)
     pos_vars <- gene_vars[gene_vars > 0]
     if (length(pos_vars) > 0) {
       variance_cutoff <- stats::quantile(pos_vars, probs = v_quantile, na.rm = TRUE)

@@ -31,6 +31,13 @@
 #' @param variance_quantile A numeric value between 0 and 1. After mean-based
 #'   filtering, genes with variance below this quantile are removed. This step
 #'   enriches for more informative genes.
+#' @param variance_scale Either `"raw"` (default) or `"log"`. The scale on which
+#'   gene variance is measured for the highly-variable-gene filter. `expression_data`
+#'   is expected to be normalized, non-negative values (e.g. normalized counts or
+#'   TPM); on such data `expression_threshold = 10` and raw-scale variance are
+#'   meaningful. `"log"` ranks variability on `log2(x + 1)`, reducing the
+#'   mean-variance confound of count data. The matrix fed to NMF is always the
+#'   original (raw, non-negative) scale regardless of this setting.
 #' @param nmf_method A character string specifying the NMF algorithm to use.
 #'   Defaults to 'brunet'. See the `NMF::nmf` documentation for other options.
 #' @param nmf_nrun An integer specifying the number of runs for the consensus NMF.
@@ -122,9 +129,11 @@ NMFprofileR <- function(
     verbose = FALSE,
     write_files = TRUE,
     on_duplicate_genes = c("collapse_max", "collapse_mean", "error"),
-    emit_marker_genes = TRUE
+    emit_marker_genes = TRUE,
+    variance_scale = c("raw", "log")
 ) {
   on_duplicate_genes <- match.arg(on_duplicate_genes)
+  variance_scale <- match.arg(variance_scale)
   # --- Helper for verbose/debug messages ---
   vmsg <- function(...) {
     if (isTRUE(verbose)) cli::cli_alert_info(...)
@@ -142,7 +151,8 @@ NMFprofileR <- function(
     expression_threshold = expression_threshold,
     variance_quantile = variance_quantile,
     gene_list_filter_file = gene_list_filter_file,
-    on_duplicate_genes = on_duplicate_genes
+    on_duplicate_genes = on_duplicate_genes,
+    variance_scale = variance_scale
   )
   final_nmf_genes <- rownames(expr_matrix)
   cli::cli_alert_info("Final matrix for NMF: {nrow(expr_matrix)} genes x {ncol(expr_matrix)} samples.")

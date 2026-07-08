@@ -9,7 +9,8 @@ nmf_preprocess(
   expression_threshold = 10,
   variance_quantile = 0.7,
   gene_list_filter_file = NULL,
-  on_duplicate_genes = c("collapse_max", "collapse_mean", "error")
+  on_duplicate_genes = c("collapse_max", "collapse_mean", "error"),
+  variance_scale = c("raw", "log")
 )
 }
 \arguments{
@@ -32,6 +33,14 @@ expression matrix will be pre-filtered to include only these genes.}
 rownames of `expression_data`: `"collapse_max"` (the default) keeps the
 per-sample maximum across duplicate rows (the most expressed probe),
 `"collapse_mean"` averages them, and `"error"` stops with a message.}
+
+\item{variance_scale}{Either `"raw"` (default) or `"log"`. The scale on which
+gene variance is measured for the highly-variable-gene filter. `expression_data`
+is expected to be normalized, non-negative values (e.g. normalized counts or
+TPM); on such data `expression_threshold = 10` and raw-scale variance are
+meaningful. `"log"` ranks variability on `log2(x + 1)`, reducing the
+mean-variance confound of count data. The matrix fed to NMF is always the
+original (raw, non-negative) scale regardless of this setting.}
 }
 \value{
 A filtered, non-negative numeric matrix ready for [nmf_fit()].

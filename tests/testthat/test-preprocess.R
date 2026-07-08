@@ -73,6 +73,24 @@ test_that("columns are preserved and output is non-negative", {
   expect_true(all(out >= 0))
 })
 
+test_that("variance_scale selects highly-variable genes on the requested scale", {
+  # geneA has the larger raw variance; geneB the larger variance on log2 scale.
+  m <- matrix(
+    c(100, 200,
+      1,   16),
+    nrow = 2, byrow = TRUE,
+    dimnames = list(c("A", "B"), c("S1", "S2"))
+  )
+
+  raw     <- NMFprofileR:::preprocess_matrix(m, 0, 0.9, NULL)                          # default "raw"
+  raw_exp <- NMFprofileR:::preprocess_matrix(m, 0, 0.9, NULL, variance_scale = "raw")
+  logsel  <- NMFprofileR:::preprocess_matrix(m, 0, 0.9, NULL, variance_scale = "log")
+
+  expect_equal(rownames(raw), "A")      # default is raw scale
+  expect_equal(rownames(raw_exp), "A")
+  expect_equal(rownames(logsel), "B")   # log scale picks the other gene
+})
+
 test_that("an external gene-filter file restricts the retained genes", {
   m <- matrix(
     c(1, 9, 1, 9,     # geneA

@@ -22,7 +22,8 @@ NMFprofileR(
   verbose = FALSE,
   write_files = TRUE,
   on_duplicate_genes = c("collapse_max", "collapse_mean", "error"),
-  emit_marker_genes = TRUE
+  emit_marker_genes = TRUE,
+  variance_scale = c("raw", "log")
 )
 }
 \arguments{
@@ -96,6 +97,14 @@ factor-specific marker genes (`NMF::extractFeatures`, Kim-Park specificity)
 and runs enrichment on them, emitting `Marker_Genes_*` and
 `Marker_Enrichment_*` outputs alongside the argmax results. The argmax
 assignment remains the primary, unchanged output.}
+
+\item{variance_scale}{Either `"raw"` (default) or `"log"`. The scale on which
+gene variance is measured for the highly-variable-gene filter. `expression_data`
+is expected to be normalized, non-negative values (e.g. normalized counts or
+TPM); on such data `expression_threshold = 10` and raw-scale variance are
+meaningful. `"log"` ranks variability on `log2(x + 1)`, reducing the
+mean-variance confound of count data. The matrix fed to NMF is always the
+original (raw, non-negative) scale regardless of this setting.}
 }
 \value{
 Invisibly, an S3 object of class `nmf_profile` (a list underneath, so

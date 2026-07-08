@@ -21,10 +21,13 @@ nmf_preprocess <- function(expression_data,
                            expression_threshold = 10.0,
                            variance_quantile = 0.7,
                            gene_list_filter_file = NULL,
-                           on_duplicate_genes = c("collapse_max", "collapse_mean", "error")) {
+                           on_duplicate_genes = c("collapse_max", "collapse_mean", "error"),
+                           variance_scale = c("raw", "log")) {
   on_duplicate_genes <- match.arg(on_duplicate_genes)
+  variance_scale <- match.arg(variance_scale)
   expression_data <- validate_expression_input(expression_data, on_duplicate_genes = on_duplicate_genes)
-  expr_matrix <- preprocess_matrix(expression_data, expression_threshold, variance_quantile, gene_list_filter_file)
+  expr_matrix <- preprocess_matrix(expression_data, expression_threshold, variance_quantile,
+                                   gene_list_filter_file, variance_scale = variance_scale)
   if (nrow(expr_matrix) < 2) {
     stop(
       "Fewer than 2 genes remain after filtering, so NMF cannot proceed. ",
