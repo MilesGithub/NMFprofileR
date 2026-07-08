@@ -109,9 +109,19 @@ NMFprofileR <- function(
   time_start <- Sys.time()
   cli::cli_h1("Starting NMFprofileR Pipeline")
 
-  # Up-front structural validation: numeric matrix, gene-symbol rownames,
-  # duplicate-symbol handling, all-zero row/column checks.
-  expression_data <- validate_expression_input(expression_data, on_duplicate_genes = on_duplicate_genes)
+  # --- Preprocessing (validates input, then filters; fails fast before any
+  #     directories are created) ---
+  cli::cli_h2("Step 1: Preprocessing Expression Matrix")
+  vmsg("Validating and filtering expression matrix...")
+  expr_matrix <- nmf_preprocess(
+    expression_data,
+    expression_threshold = expression_threshold,
+    variance_quantile = variance_quantile,
+    gene_list_filter_file = gene_list_filter_file,
+    on_duplicate_genes = on_duplicate_genes
+  )
+  final_nmf_genes <- rownames(expr_matrix)
+  cli::cli_alert_info("Final matrix for NMF: {nrow(expr_matrix)} genes x {ncol(expr_matrix)} samples.")
 
   # sanitize output_prefix (remove trailing slashes)
   output_prefix <- sub("/+$", "", as.character(output_prefix))
@@ -141,22 +151,7 @@ NMFprofileR <- function(
   }
   log_line("NMFprofileR run started (seed=", nmf_seed, ", method=", nmf_method,
            ", ranks=", paste(range(nmf_rank), collapse = "-"), ").")
-
-  # --- Preprocessing ---
-  cli::cli_h2("Step 1: Preprocessing Expression Matrix")
-  vmsg("Converting and filtering expression matrix...")
-  expr_matrix <- preprocess_matrix(expression_data, expression_threshold, variance_quantile, gene_list_filter_file)
-  final_nmf_genes <- rownames(expr_matrix)
-  cli::cli_alert_info("Final matrix for NMF: {nrow(expr_matrix)} genes x {ncol(expr_matrix)} samples.")
-
-  if (nrow(expr_matrix) < 2) {
-    stop(
-      "Fewer than 2 genes remain after filtering, so NMF cannot proceed. ",
-      "Check `expression_threshold` (default 10 assumes non-log-scale input; ",
-      "on log-scaled data it removes almost everything) and `variance_quantile`.",
-      call. = FALSE
-    )
-  }
+  log_line("Preprocessed matrix: ", nrow(expr_matrix), " genes x ", ncol(expr_matrix), " samples.")
 
   # --- NMF Rank Estimation Survey (safe parallel handling) ---
   cli::cli_h2("Step 2: Performing NMF Rank Estimation Survey")
@@ -222,28 +217,8 @@ NMFprofileR <- function(
         W <- NMF::basis(nmf_result)
         H <- NMF::coef(nmf_result)
 
-        # --- Assign genes robustly (handle vector, list($predict), or membership matrix) ---
-        # gene predictions
-        raw_gene_pred <- tryCatch(
-          NMF::predict(nmf_result, what = "features", dmatrix = TRUE),
-          error = function(e) {
-            return(NULL)
-          }
-        )
-
-        gene_preds <- normalize_predict(raw_gene_pred, nrow(W), axis = "features")
-
-        basis_genes_df <- tibble::tibble(
-          Gene = rownames(W),
-          Factor = paste0("Factor_", gene_preds)
-        )
-
-        # Order by Factor first, then alphabetically within factor
-        basis_genes_df$Factor <- factor(
-          basis_genes_df$Factor,
-          levels = paste0("Factor_", 1:k)
-        )
-        basis_genes_df <- basis_genes_df[order(basis_genes_df$Factor, basis_genes_df$Gene), ]
+        # --- Assign genes to their dominant factor (composable stage) ---
+        basis_genes_df <- nmf_basis_genes(nmf_result)
 
         if (isTRUE(write_files)) {
           dir.create(dirs$basis_genes, showWarnings = FALSE, recursive = TRUE)
@@ -294,37 +269,8 @@ NMFprofileR <- function(
         )
         if (is.null(combined_enrichment_results_df)) combined_enrichment_results_df <- data.frame()
 
-        # --- Sample assignments ---
-        sample_assignments <- tibble::tibble(
-          SampleID = colnames(H),
-          Dominant_Factor = paste0("Factor_", apply(H, 2, which.max))
-        )
-
-        # --- Silhouette values ---
-        silhouette_df <- compute_sample_silhouette(nmf_result, H, k, verbose = TRUE)
-
-        # Merge
-        sample_assignments <- merge(
-          sample_assignments,
-          silhouette_df,
-          by = "SampleID",
-          all.x = TRUE,
-          sort = FALSE
-        )
-
-        # Order: Factor → Silhouette (descending) → SampleID
-        sample_assignments$Dominant_Factor <- factor(
-          sample_assignments$Dominant_Factor,
-          levels = paste0("Factor_", 1:k)
-        )
-
-        sample_assignments <- sample_assignments[
-          order(
-            sample_assignments$Dominant_Factor,
-            -sample_assignments$Silhouette_NMF,
-            sample_assignments$SampleID
-          ),
-        ]
+        # --- Sample assignments + silhouette (composable stage) ---
+        sample_assignments <- nmf_sample_assignments(nmf_result, verbose = TRUE)
 
         # Save
         if (isTRUE(write_files)) {

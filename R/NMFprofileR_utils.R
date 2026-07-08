@@ -268,18 +268,8 @@ run_nmf_for_rank <- function(k, expr_matrix, method, nrun, seed, nmf_core_dir, f
                              write_files = TRUE) {
   cli::cli_alert_info("Running Consensus NMF (k={k}, nrun={nrun})...")
 
-  is_windows <- tolower(.Platform$OS.type) == "windows"
-  nmf_options <- if (is_windows) list(parallel = 0, verbose = TRUE) else list(parallel = min(nrun, max(1, tryCatch(parallel::detectCores(logical = TRUE), error = function(e) 1))), verbose = TRUE)
-  pbackend_arg <- if (is_windows) NA else NULL
-
-  nmf_result <- tryCatch({
-    args <- list(x = expr_matrix, rank = k, method = method, nrun = nrun, seed = seed, .options = nmf_options)
-    if (!is.null(pbackend_arg)) args$.pbackend <- pbackend_arg
-    do.call(NMF::nmf, args)
-  }, error = function(e) {
-    warning(sprintf("NMF fit failed for rank %d: %s", k, conditionMessage(e)), call. = FALSE)
-    return(NULL)
-  })
+  # Fitting itself lives in the exported nmf_fit(); this wrapper adds disk output.
+  nmf_result <- nmf_fit(expr_matrix, rank = k, method = method, nrun = nrun, seed = seed)
 
   if (!is.null(nmf_result) && isTRUE(write_files)) {
     save_path <- file.path(nmf_core_dir, paste0("NMF_Result_Object_Rank_k", k, ".rds"))

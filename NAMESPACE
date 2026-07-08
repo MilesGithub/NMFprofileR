@@ -2,6 +2,11 @@
 
 export("%>%")
 export(NMFprofileR)
+export(nmf_basis_genes)
+export(nmf_enrichment)
+export(nmf_fit)
+export(nmf_preprocess)
+export(nmf_sample_assignments)
 importFrom(NMF,consensus)
 importFrom(NMF,predict)
 importFrom(cluster,silhouette)
