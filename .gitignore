@@ -13,3 +13,8 @@ inst/doc
 *.pdf
 *.html
 *.aux
+
+# R CMD build/check artifacts
+*.tar.gz
+*.Rcheck/
+docs/
