@@ -45,13 +45,11 @@ setup_directories <- function(output_prefix) {
 #' @param plot_expression Expression that generates a plot (e.g., ggplot object or base R plot call)
 #' @return A recorded plot object (can be replayed with replayPlot)
 capture_plot <- function(plot_expression) {
-  pdf(NULL);
-  dev.control(displaylist = "enable");
-  plot_expression;
-  p <- recordPlot();
-  dev.off()
-
-  return(p)
+  pdf(NULL)
+  dev.control(displaylist = "enable")
+  on.exit(dev.off(), add = TRUE)
+  force(plot_expression)
+  recordPlot()
 }
 
 #' Preprocess a Gene Expression Matrix for NMF Analysis
@@ -106,6 +104,45 @@ preprocess_matrix <- function(expression_data, threshold, v_quantile, filter_fil
   }
 
   return(expr_matrix)
+}
+
+#' Normalize NMF cluster predictions to an integer vector
+#'
+#' An internal helper that coerces the varied return shapes of
+#' `NMF::predict()` into a plain integer vector of length `expected_length`.
+#' It handles an atomic vector, a list with a `$predict` element, and a
+#' membership matrix in either orientation (features x k or k x features),
+#' falling back to all-`NA` for unrecognised input and padding/truncating to
+#' the expected length as a final safeguard.
+#'
+#' @param raw The raw object returned by `NMF::predict()`.
+#' @param expected_length Integer; the number of items expected (e.g. the
+#'   number of genes for feature predictions, or samples for sample predictions).
+#' @param axis Character; either `"features"` or `"samples"`. Currently used
+#'   only for validation.
+#'
+#' @return An integer vector of length `expected_length`.
+#'
+#' @noRd
+normalize_predict <- function(raw, expected_length, axis = c("features", "samples")) {
+  axis <- match.arg(axis)
+  if (is.list(raw) && "predict" %in% names(raw)) {
+    preds <- as.integer(raw$predict)
+  } else if (is.atomic(raw) && length(raw) == expected_length) {
+    preds <- as.integer(raw)
+  } else if (is.matrix(raw) && ncol(raw) >= 1 && nrow(raw) == expected_length) {
+    preds <- apply(raw, 1, which.max)
+  } else if (is.matrix(raw) && ncol(raw) >= 1 && ncol(raw) == expected_length) {
+    # fallback if transposed membership matrix
+    preds <- apply(raw, 2, which.max)
+  } else {
+    preds <- rep(NA_integer_, expected_length)
+  }
+  if (length(preds) != expected_length) {
+    preds <- preds[seq_len(min(length(preds), expected_length))]
+    if (length(preds) < expected_length) preds <- c(preds, rep(NA_integer_, expected_length - length(preds)))
+  }
+  return(as.integer(preds))
 }
 
 #' Run Consensus NMF for a Single Rank

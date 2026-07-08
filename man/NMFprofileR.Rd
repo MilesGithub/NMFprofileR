@@ -67,12 +67,23 @@ enrichment results.}
 \item{enrichment_plot_top_n}{An integer specifying the number of top enriched
 terms to display in the summary dot plots.}
 
-\item{verbose}{A logical value. If TRUE, prints detailed messages. Defaults to TRUE.}
+\item{verbose}{A logical value. If TRUE, prints detailed messages. Defaults to FALSE.}
 }
 \value{
-A single data frame (`consolidated_summary_df`) containing a detailed
-  summary for every factor from every rank tested. All detailed results, plots,
-  and log files are saved to disk at the location specified by `output_prefix`.
+Invisibly, a named list with five elements:
+  \describe{
+    \item{`consolidated_summary_df`}{A data frame summarizing every factor
+      from every rank tested.}
+    \item{`rank_metrics`}{A data frame of quality metrics from the
+      `NMF::nmfEstimateRank` rank survey (empty if the survey failed).}
+    \item{`nmf_rds`}{A named list of file paths to the saved NMF fit objects,
+      keyed by rank.}
+    \item{`output_dirs`}{A named list of the output directories created for
+      the run.}
+    \item{`runtime`}{A `difftime` giving the total pipeline runtime.}
+  }
+  All detailed results, plots, and log files are additionally written to disk
+  under the location specified by `output_prefix`.
 }
 \description{
 This function is the main entry point for the NMFprofileR workflow. It

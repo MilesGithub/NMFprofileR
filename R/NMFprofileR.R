@@ -36,14 +36,25 @@
 #'   enrichment results.
 #' @param enrichment_plot_top_n An integer specifying the number of top enriched
 #'   terms to display in the summary dot plots.
-#' @param verbose A logical value. If TRUE, prints detailed messages. Defaults to TRUE.
+#' @param verbose A logical value. If TRUE, prints detailed messages. Defaults to FALSE.
 #'
 #' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
 #' @importFrom cluster silhouette
 #'
-#' @return A single data frame (`consolidated_summary_df`) containing a detailed
-#'   summary for every factor from every rank tested. All detailed results, plots,
-#'   and log files are saved to disk at the location specified by `output_prefix`.
+#' @return Invisibly, a named list with five elements:
+#'   \describe{
+#'     \item{`consolidated_summary_df`}{A data frame summarizing every factor
+#'       from every rank tested.}
+#'     \item{`rank_metrics`}{A data frame of quality metrics from the
+#'       `NMF::nmfEstimateRank` rank survey (empty if the survey failed).}
+#'     \item{`nmf_rds`}{A named list of file paths to the saved NMF fit objects,
+#'       keyed by rank.}
+#'     \item{`output_dirs`}{A named list of the output directories created for
+#'       the run.}
+#'     \item{`runtime`}{A `difftime` giving the total pipeline runtime.}
+#'   }
+#'   All detailed results, plots, and log files are additionally written to disk
+#'   under the location specified by `output_prefix`.
 #'
 #' @export
 #'
@@ -98,6 +109,15 @@ NMFprofileR <- function(
   expr_matrix <- preprocess_matrix(expression_data, expression_threshold, variance_quantile, gene_list_filter_file)
   final_nmf_genes <- rownames(expr_matrix)
   cli::cli_alert_info("Final matrix for NMF: {nrow(expr_matrix)} genes x {ncol(expr_matrix)} samples.")
+
+  if (nrow(expr_matrix) < 2) {
+    stop(
+      "Fewer than 2 genes remain after filtering, so NMF cannot proceed. ",
+      "Check `expression_threshold` (default 10 assumes non-log-scale input; ",
+      "on log-scaled data it removes almost everything) and `variance_quantile`.",
+      call. = FALSE
+    )
+  }
 
   # --- NMF Rank Estimation Survey (safe parallel handling) ---
   cli::cli_h2("Step 2: Performing NMF Rank Estimation Survey")
@@ -160,27 +180,6 @@ NMFprofileR <- function(
         H <- NMF::coef(nmf_result)
 
         # --- Assign genes robustly (handle vector, list($predict), or membership matrix) ---
-        normalize_predict <- function(raw, expected_length, axis = c("features", "samples")) {
-          axis <- match.arg(axis)
-          if (is.list(raw) && "predict" %in% names(raw)) {
-            preds <- as.integer(raw$predict)
-          } else if (is.atomic(raw) && length(raw) == expected_length) {
-            preds <- as.integer(raw)
-          } else if (is.matrix(raw) && ncol(raw) >= 1 && nrow(raw) == expected_length) {
-            preds <- apply(raw, 1, which.max)
-          } else if (is.matrix(raw) && ncol(raw) >= 1 && ncol(raw) == expected_length) {
-            # fallback if transposed membership matrix
-            preds <- apply(raw, 2, which.max)
-          } else {
-            preds <- rep(NA_integer_, expected_length)
-          }
-          if (length(preds) != expected_length) {
-            preds <- preds[seq_len(min(length(preds), expected_length))]
-            if (length(preds) < expected_length) preds <- c(preds, rep(NA_integer_, expected_length - length(preds)))
-          }
-          return(as.integer(preds))
-        }
-
         # gene predictions
         raw_gene_pred <- tryCatch(
           NMF::predict(nmf_result, what = "features", dmatrix = TRUE),
@@ -307,7 +306,8 @@ NMFprofileR <- function(
           file_prefix = file_prefix,
           nrun = nmf_nrun,
           top_n = enrichment_plot_top_n,
-          gost_objects_list = gost_objects_list
+          gost_objects_list = gost_objects_list,
+          nmf_seed = nmf_seed
         )
       }
     }

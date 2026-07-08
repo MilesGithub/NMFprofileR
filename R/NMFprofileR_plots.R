@@ -9,11 +9,11 @@ custom_theme <- function() {
   ggplot2::theme(
     legend.position = "right",
     panel.background = ggplot2::element_rect(fill = "#f2f2f2", colour = "#f2f2f2"),
-    panel.grid.major = ggplot2::element_line(size = 0.5, linetype = 'solid', colour = "#dbe3db"),
-    panel.grid.minor = ggplot2::element_line(size = 0.25, linetype = 'solid', colour = "#dbe3db"),
+    panel.grid.major = ggplot2::element_line(linewidth = 0.5, linetype = 'solid', colour = "#dbe3db"),
+    panel.grid.minor = ggplot2::element_line(linewidth = 0.25, linetype = 'solid', colour = "#dbe3db"),
     axis.title = ggplot2::element_text(size = 14),
     axis.text = ggplot2::element_text(size = 12),
-    panel.border = ggplot2::element_rect(colour = "black", fill = NA, size = 0.5)
+    panel.border = ggplot2::element_rect(colour = "black", fill = NA, linewidth = 0.5)
   )
 }
 
@@ -35,13 +35,18 @@ custom_theme <- function() {
 #' @param file_prefix The base prefix for all output file names.
 #' @param nrun The number of NMF runs performed.
 #' @param top_n The number of top enriched terms to display in dot plots.
-#' @param gost_objects_list
-#' #' @importFrom tidyselect where
+#' @param gost_objects_list A list of g:Profiler `gost` result objects, one per
+#'   factor, used to generate the enrichment Manhattan plots.
+#' @param nmf_seed An integer seed set immediately before the UMAP embedding so
+#'   the sample-coefficient UMAP is reproducible.
+#'
+#' @importFrom tidyselect where
 #'
 #' @noRd
 generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gprofiler_df,
                                 combined_enrichment_results_df, expr_matrix, basis_genes,
-                                k_plots_dir, file_prefix, nrun, top_n, gost_objects_list) {
+                                k_plots_dir, file_prefix, nrun, top_n, gost_objects_list,
+                                nmf_seed = 123456) {
 
   cli::cli_alert_info("Generating plots for k={k}...")
 
@@ -118,22 +123,9 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
     for (nm in names(valid_gost_results)) {
       gost_obj <- valid_gost_results[[nm]]
 
-      # Check for result presence and structure
-      has_result <- is.list(gost_obj) && "result" %in% names(gost_obj)
-
-      if (has_result) {
-        res_df <- gost_obj$result
-        if (is.data.frame(res_df)) {
-          # Inspect query column if present
-          if ("query" %in% colnames(res_df)) {
-            qvals <- res_df$query
-          }
-        }
-      }
-
       # Decide whether to plot
       can_plot <- FALSE
-      reason_skip <- character(0)
+      reason_skip <- "unknown"
       if (!is.list(gost_obj)) {
         reason_skip <- "gost_obj is not a list"
       } else if (!("result" %in% names(gost_obj))) {
@@ -151,7 +143,10 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
         can_plot <- TRUE
       }
 
-      if (can_plot) {
+      if (!can_plot) {
+        cli::cli_alert_info("Skipping Manhattan plot for {nm} (k={k}): {reason_skip}")
+        next
+      }
 
       # Attempt to create and save the plot with robust error handling
       out_file <- file.path(enrichment_plots_dir, paste0("Enrichment_Manhattan_Plot_Rank_k", k, "_", nm, ".pdf"))
@@ -182,7 +177,6 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
         # continue to next factor without stopping the pipeline
       })
 
-      }
     } # end for loop
 
   } else {
@@ -263,6 +257,7 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
   # --- UMAP of Sample Coefficients ---
   H_matrix_t <- t(H)
   if (nrow(H_matrix_t) > 15) { # UMAP is more stable with >15 neighbors
+    set.seed(nmf_seed)
     umap_res <- uwot::umap(H_matrix_t, n_neighbors = 15)
     umap_df <- as.data.frame(umap_res) %>%
       `colnames<-`(c("UMAP1", "UMAP2")) %>%
