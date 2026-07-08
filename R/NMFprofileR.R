@@ -52,6 +52,10 @@
 #'   is written and no directories are created; the pipeline computes in memory
 #'   and returns its results only. Useful for programmatic use, examples, and
 #'   tests (which must not write outside `tempdir()`).
+#' @param on_duplicate_genes How to handle duplicated gene symbols in the
+#'   rownames of `expression_data`: `"collapse_max"` (the default) keeps the
+#'   per-sample maximum across duplicate rows (the most expressed probe),
+#'   `"collapse_mean"` averages them, and `"error"` stops with a message.
 #'
 #' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
 #' @importFrom cluster silhouette
@@ -93,8 +97,10 @@ NMFprofileR <- function(
     gprofiler_cutoff = 0.05,
     enrichment_plot_top_n = 50,
     verbose = FALSE,
-    write_files = TRUE
+    write_files = TRUE,
+    on_duplicate_genes = c("collapse_max", "collapse_mean", "error")
 ) {
+  on_duplicate_genes <- match.arg(on_duplicate_genes)
   # --- Helper for verbose/debug messages ---
   vmsg <- function(...) {
     if (isTRUE(verbose)) cli::cli_alert_info(...)
@@ -103,9 +109,9 @@ NMFprofileR <- function(
   time_start <- Sys.time()
   cli::cli_h1("Starting NMFprofileR Pipeline")
 
-  if (!is.data.frame(expression_data) && !is.matrix(expression_data)) {
-    stop("`expression_data` must be a data frame or matrix.", call. = FALSE)
-  }
+  # Up-front structural validation: numeric matrix, gene-symbol rownames,
+  # duplicate-symbol handling, all-zero row/column checks.
+  expression_data <- validate_expression_input(expression_data, on_duplicate_genes = on_duplicate_genes)
 
   # sanitize output_prefix (remove trailing slashes)
   output_prefix <- sub("/+$", "", as.character(output_prefix))

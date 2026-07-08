@@ -20,7 +20,8 @@ NMFprofileR(
   gprofiler_cutoff = 0.05,
   enrichment_plot_top_n = 50,
   verbose = FALSE,
-  write_files = TRUE
+  write_files = TRUE,
+  on_duplicate_genes = c("collapse_max", "collapse_mean", "error")
 )
 }
 \arguments{
@@ -75,6 +76,11 @@ and log files are written to disk under `output_prefix`. If FALSE, nothing
 is written and no directories are created; the pipeline computes in memory
 and returns its results only. Useful for programmatic use, examples, and
 tests (which must not write outside `tempdir()`).}
+
+\item{on_duplicate_genes}{How to handle duplicated gene symbols in the
+rownames of `expression_data`: `"collapse_max"` (the default) keeps the
+per-sample maximum across duplicate rows (the most expressed probe),
+`"collapse_mean"` averages them, and `"error"` stops with a message.}
 }
 \value{
 Invisibly, a named list with six elements:

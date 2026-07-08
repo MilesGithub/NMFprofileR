@@ -111,6 +111,102 @@ preprocess_matrix <- function(expression_data, threshold, v_quantile, filter_fil
   return(expr_matrix)
 }
 
+#' Collapse duplicated gene rows to a single row per gene symbol
+#'
+#' Duplicate gene symbols are common after mapping identifiers (e.g.
+#' Ensembl IDs) to symbols. This helper aggregates all rows sharing a symbol
+#' into one, keeping either the per-sample maximum (the most expressed probe)
+#' or the per-sample mean. The first-appearance order of unique symbols is
+#' preserved.
+#'
+#' @param mat A numeric matrix with gene symbols as rownames.
+#' @param method Either `"max"` (default) or `"mean"`.
+#'
+#' @return A numeric matrix with one row per unique gene symbol.
+#'
+#' @noRd
+collapse_duplicate_genes <- function(mat, method = c("max", "mean")) {
+  method <- match.arg(method)
+  genes <- rownames(mat)
+  if (is.null(genes) || !anyDuplicated(genes)) return(mat)
+
+  uniq <- unique(genes)
+  agg <- if (method == "max") {
+    function(rows) apply(mat[rows, , drop = FALSE], 2, max, na.rm = TRUE)
+  } else {
+    function(rows) colMeans(mat[rows, , drop = FALSE], na.rm = TRUE)
+  }
+
+  out <- t(vapply(uniq, function(g) {
+    rows <- which(genes == g)
+    if (length(rows) == 1L) mat[rows, ] else agg(rows)
+  }, numeric(ncol(mat))))
+
+  rownames(out) <- uniq
+  colnames(out) <- colnames(mat)
+  out
+}
+
+#' Validate and normalize the expression input matrix
+#'
+#' Performs up-front structural validation before any NMF work: requires a
+#' numeric matrix with gene-symbol rownames, resolves duplicate gene symbols,
+#' drops all-zero gene rows, and warns about all-zero sample columns. Errors
+#' are raised early and with actionable messages rather than surfacing as
+#' opaque downstream failures.
+#'
+#' @param expression_data A data frame or matrix of expression values.
+#' @param on_duplicate_genes One of `"collapse_max"` (default), `"collapse_mean"`,
+#'   or `"error"`, controlling how duplicated gene symbols are handled.
+#'
+#' @return A numeric matrix with unique gene-symbol rownames.
+#'
+#' @noRd
+validate_expression_input <- function(expression_data,
+                                      on_duplicate_genes = c("collapse_max", "collapse_mean", "error")) {
+  on_duplicate_genes <- match.arg(on_duplicate_genes)
+
+  if (!is.data.frame(expression_data) && !is.matrix(expression_data)) {
+    stop("`expression_data` must be a data frame or matrix.", call. = FALSE)
+  }
+
+  mat <- as.matrix(expression_data)
+  if (!is.numeric(mat)) {
+    stop("`expression_data` must be numeric (non-numeric columns were found).", call. = FALSE)
+  }
+
+  gene_names <- rownames(mat)
+  if (is.null(gene_names) || any(is.na(gene_names)) || any(!nzchar(gene_names))) {
+    stop("`expression_data` must have gene symbols as rownames.", call. = FALSE)
+  }
+
+  if (anyDuplicated(gene_names)) {
+    n_dup <- sum(duplicated(gene_names))
+    if (on_duplicate_genes == "error") {
+      stop(sprintf(
+        "`expression_data` has %d duplicated gene symbol(s). Deduplicate the input or set `on_duplicate_genes` to \"collapse_max\"/\"collapse_mean\".",
+        n_dup
+      ), call. = FALSE)
+    }
+    method <- sub("collapse_", "", on_duplicate_genes)
+    cli::cli_alert_warning("Collapsing {n_dup} duplicated gene symbol(s) by {method}.")
+    mat <- collapse_duplicate_genes(mat, method = method)
+  }
+
+  zero_rows <- rowSums(abs(mat), na.rm = TRUE) == 0
+  if (any(zero_rows)) {
+    cli::cli_alert_warning("Dropping {sum(zero_rows)} all-zero gene row(s).")
+    mat <- mat[!zero_rows, , drop = FALSE]
+  }
+
+  zero_cols <- colSums(abs(mat), na.rm = TRUE) == 0
+  if (any(zero_cols)) {
+    cli::cli_alert_warning("{sum(zero_cols)} sample column(s) are all-zero; NMF may be unstable.")
+  }
+
+  mat
+}
+
 #' Normalize NMF cluster predictions to an integer vector
 #'
 #' An internal helper that coerces the varied return shapes of
