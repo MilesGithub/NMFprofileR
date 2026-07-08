@@ -49,6 +49,7 @@ setup_directories <- function(output_prefix, create = TRUE) {
 #'
 #' @param plot_expression Expression that generates a plot (e.g., ggplot object or base R plot call)
 #' @return A recorded plot object (can be replayed with replayPlot)
+#' @noRd
 capture_plot <- function(plot_expression) {
   pdf(NULL)
   dev.control(displaylist = "enable")
@@ -522,7 +523,7 @@ generate_rank_summary <- function(k, W, H, sample_assignments, basis_genes_list,
 #' @importFrom stats as.dist dist
 #' @importFrom cluster silhouette
 #'
-#' @keywords internal
+#' @noRd
 compute_sample_silhouette <- function(nmf_result, H, k, verbose = FALSE) {
   tryCatch({
     # Consensus matrix
