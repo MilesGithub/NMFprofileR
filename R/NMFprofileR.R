@@ -41,7 +41,7 @@
 #' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
 #' @importFrom cluster silhouette
 #'
-#' @return Invisibly, a named list with five elements:
+#' @return Invisibly, a named list with six elements:
 #'   \describe{
 #'     \item{`consolidated_summary_df`}{A data frame summarizing every factor
 #'       from every rank tested.}
@@ -52,6 +52,10 @@
 #'     \item{`output_dirs`}{A named list of the output directories created for
 #'       the run.}
 #'     \item{`runtime`}{A `difftime` giving the total pipeline runtime.}
+#'     \item{`provenance`}{A named list recording the captured g:Profiler
+#'       database version (`gprofiler_version`), the `run_parameters` used, and
+#'       the paths of the manifest and session-information files written
+#'       (`files`), for reproducibility.}
 #'   }
 #'   All detailed results, plots, and log files are additionally written to disk
 #'   under the location specified by `output_prefix`.
@@ -162,6 +166,7 @@ NMFprofileR <- function(
   cli::cli_h2("Step 3: Performing Deep Analysis for Each Rank")
   all_summaries_list <- list()
   nmf_rds_paths <- list()
+  gprofiler_version <- NA_character_  # captured from the first enrichment result
 
   for (k in nmf_rank) {
 
@@ -229,6 +234,11 @@ NMFprofileR <- function(
         valid_gost_objects <- gost_objects_list[!sapply(gost_objects_list, is.null)]
         all_gprofiler_results_dfs <- lapply(valid_gost_objects, function(gost_obj) gost_obj$result)
         combined_gprofiler_df <- dplyr::bind_rows(all_gprofiler_results_dfs)
+
+        # Capture the g:Profiler database version once, for provenance
+        if (is.na(gprofiler_version)) {
+          gprofiler_version <- extract_gprofiler_version(valid_gost_objects)
+        }
 
         combined_enrichment_results_df <- perform_combined_enrichment(
           basis_genes_list = basis_genes_list,
@@ -328,13 +338,41 @@ NMFprofileR <- function(
     runtime <- difftime(time_end, time_start)
     cli::cli_alert_success("NMFprofileR Pipeline finished successfully in {format(runtime)}.")
 
+    # --- Provenance: record the exact parameters, g:Profiler snapshot, and
+    #     session information that produced this run (reproducibility hardening).
+    run_parameters <- list(
+      nmf_rank             = nmf_rank,
+      nmf_method           = nmf_method,
+      nmf_nrun             = nmf_nrun,
+      nmf_seed             = nmf_seed,
+      expression_threshold = expression_threshold,
+      variance_quantile    = variance_quantile,
+      gprofiler_organism   = gprofiler_organism,
+      gprofiler_sources    = gprofiler_sources,
+      gprofiler_correction = gprofiler_correction,
+      gprofiler_cutoff     = gprofiler_cutoff
+    )
+    provenance <- list(
+      gprofiler_version = gprofiler_version,
+      run_parameters    = run_parameters,
+      files             = NULL
+    )
+    provenance$files <- tryCatch(
+      write_run_provenance(dirs, file_prefix, run_parameters, gprofiler_version, runtime),
+      error = function(e) {
+        cli::cli_alert_warning("Failed to write run provenance: {conditionMessage(e)}")
+        NULL
+      }
+    )
+
     # Return a programmatically useful list while keeping consolidated_summary_df as main item
     result <- list(
       consolidated_summary_df = consolidated_summary_df,
       rank_metrics = all_rank_metrics_df,
       nmf_rds = nmf_rds_paths,
       output_dirs = dirs,
-      runtime = runtime
+      runtime = runtime,
+      provenance = provenance
     )
 
   invisible(result)

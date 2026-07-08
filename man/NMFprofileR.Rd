@@ -70,7 +70,7 @@ terms to display in the summary dot plots.}
 \item{verbose}{A logical value. If TRUE, prints detailed messages. Defaults to FALSE.}
 }
 \value{
-Invisibly, a named list with five elements:
+Invisibly, a named list with six elements:
   \describe{
     \item{`consolidated_summary_df`}{A data frame summarizing every factor
       from every rank tested.}
@@ -81,6 +81,10 @@ Invisibly, a named list with five elements:
     \item{`output_dirs`}{A named list of the output directories created for
       the run.}
     \item{`runtime`}{A `difftime` giving the total pipeline runtime.}
+    \item{`provenance`}{A named list recording the captured g:Profiler
+      database version (`gprofiler_version`), the `run_parameters` used, and
+      the paths of the manifest and session-information files written
+      (`files`), for reproducibility.}
   }
   All detailed results, plots, and log files are additionally written to disk
   under the location specified by `output_prefix`.

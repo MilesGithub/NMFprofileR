@@ -466,3 +466,88 @@ compute_sample_silhouette <- function(nmf_result, H, k, verbose = FALSE) {
     data.frame(SampleID = colnames(H), Silhouette_NMF = NA_real_)
   })
 }
+
+#' Extract the g:Profiler database version from a list of gost objects
+#'
+#' g:Profiler is a live service whose underlying databases are versioned
+#' (the version string, e.g. "e111_eg58_p18_...", encodes the Ensembl and
+#' data-source snapshot). Capturing it lets a figure be traced to the exact
+#' snapshot that produced it. This helper returns the first non-missing
+#' `$meta$version` found in a list of `gprofiler2::gost()` result objects.
+#'
+#' @param gost_objects A list (possibly containing `NULL`s) of gost objects.
+#'
+#' @return A single character string, or `NA_character_` if no version is found.
+#'
+#' @noRd
+extract_gprofiler_version <- function(gost_objects) {
+  if (is.null(gost_objects)) return(NA_character_)
+  if (!is.list(gost_objects) || "meta" %in% names(gost_objects)) {
+    # a single gost object was passed
+    gost_objects <- list(gost_objects)
+  }
+  for (g in gost_objects) {
+    if (!is.null(g) && is.list(g) && !is.null(g$meta) && !is.null(g$meta$version)) {
+      v <- as.character(g$meta$version)
+      if (length(v) >= 1 && nzchar(v[1])) return(v[1])
+    }
+  }
+  NA_character_
+}
+
+#' Write a run manifest and session information for reproducibility
+#'
+#' Records the parameters that produced a run, the captured g:Profiler
+#' database version, the package version, runtime, and the full session
+#' information, so that the outputs of a run are traceable and defensible.
+#'
+#' @param dirs The named list of output directories from `setup_directories()`.
+#' @param file_prefix The base prefix for output file names.
+#' @param params A named list of the run parameters to record.
+#' @param gprofiler_version The captured g:Profiler version string (or `NA`).
+#' @param runtime A `difftime` giving the total pipeline runtime.
+#'
+#' @return Invisibly, a named list of the paths written (`manifest`,
+#'   `session_info`).
+#'
+#' @noRd
+write_run_provenance <- function(dirs, file_prefix, params, gprofiler_version, runtime) {
+  dir.create(dirs$summaries, showWarnings = FALSE, recursive = TRUE)
+
+  pkg_version <- tryCatch(
+    as.character(utils::packageVersion("NMFprofileR")),
+    error = function(e) "unknown"
+  )
+
+  fmt_param <- function(x) {
+    if (is.null(x)) return("NULL")
+    paste(as.character(x), collapse = ", ")
+  }
+
+  manifest_path <- file.path(dirs$summaries, paste0(file_prefix, "_Run_Manifest.txt"))
+  manifest_lines <- c(
+    "NMFprofileR run manifest",
+    "========================",
+    paste0("Generated:            ", format(Sys.time(), tz = "UTC", usetz = TRUE)),
+    paste0("NMFprofileR version:  ", pkg_version),
+    paste0("Runtime:              ", format(runtime)),
+    "",
+    "-- Parameters --",
+    vapply(names(params), function(nm) sprintf("%-22s %s", paste0(nm, ":"), fmt_param(params[[nm]])),
+           character(1)),
+    "",
+    "-- g:Profiler --",
+    paste0("Database version:     ", ifelse(is.na(gprofiler_version), "not captured (no enrichment results)", gprofiler_version))
+  )
+  writeLines(manifest_lines, manifest_path)
+
+  session_path <- file.path(dirs$summaries, paste0(file_prefix, "_Session_Info.txt"))
+  session_lines <- if (requireNamespace("sessioninfo", quietly = TRUE)) {
+    utils::capture.output(print(sessioninfo::session_info()))
+  } else {
+    utils::capture.output(print(utils::sessionInfo()))
+  }
+  writeLines(session_lines, session_path)
+
+  invisible(list(manifest = manifest_path, session_info = session_path))
+}
