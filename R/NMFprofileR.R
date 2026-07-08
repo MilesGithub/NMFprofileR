@@ -63,6 +63,12 @@
 #'   rownames of `expression_data`: `"collapse_max"` (the default) keeps the
 #'   per-sample maximum across duplicate rows (the most expressed probe),
 #'   `"collapse_mean"` averages them, and `"error"` stops with a message.
+#' @param emit_marker_genes A logical value. If TRUE (the default), in addition
+#'   to the argmax basis-gene assignment the pipeline also extracts
+#'   factor-specific marker genes (`NMF::extractFeatures`, Kim-Park specificity)
+#'   and runs enrichment on them, emitting `Marker_Genes_*` and
+#'   `Marker_Enrichment_*` outputs alongside the argmax results. The argmax
+#'   assignment remains the primary, unchanged output.
 #'
 #' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
 #' @importFrom cluster silhouette
@@ -75,12 +81,14 @@
 #'     \item{`rank_metrics`}{A data frame of quality metrics from the
 #'       `NMF::nmfEstimateRank` rank survey (empty if the survey failed).}
 #'     \item{`fits`}{A named list of the fitted `NMFfit` objects, keyed by rank.}
-#'     \item{`basis_genes`}{A named list of per-rank basis-gene tables
-#'       (gene to dominant factor).}
+#'     \item{`basis_genes`}{A named list of per-rank basis-gene tables (every
+#'       gene to its dominant factor, by argmax).}
+#'     \item{`marker_genes`}{A named list of per-rank factor-specific marker-gene
+#'       tables (specificity-scored; only when `emit_marker_genes = TRUE`).}
 #'     \item{`sample_assignments`}{A named list of per-rank sample-assignment
 #'       tables (sample to dominant factor, with silhouette widths).}
-#'     \item{`enrichment`}{A list with `per_factor` and `combined` named lists of
-#'       per-rank g:Profiler enrichment data frames.}
+#'     \item{`enrichment`}{A list with `per_factor`, `combined`, and `markers`
+#'       named lists of per-rank g:Profiler enrichment data frames.}
 #'     \item{`nmf_rds`}{A named list of file paths to the saved NMF fit objects
 #'       (empty when `write_files = FALSE`).}
 #'     \item{`output_dirs`}{A named list of the output directories created for
@@ -113,7 +121,8 @@ NMFprofileR <- function(
     enrichment_plot_top_n = 50,
     verbose = FALSE,
     write_files = TRUE,
-    on_duplicate_genes = c("collapse_max", "collapse_mean", "error")
+    on_duplicate_genes = c("collapse_max", "collapse_mean", "error"),
+    emit_marker_genes = TRUE
 ) {
   on_duplicate_genes <- match.arg(on_duplicate_genes)
   # --- Helper for verbose/debug messages ---
@@ -218,9 +227,11 @@ NMFprofileR <- function(
   # In-memory accumulators (returned so callers need not re-read files)
   fits_by_rank <- list()
   basis_genes_by_rank <- list()
+  marker_genes_by_rank <- list()
   sample_assignments_by_rank <- list()
   enrichment_per_factor_by_rank <- list()
   enrichment_combined_by_rank <- list()
+  marker_enrichment_by_rank <- list()
 
   for (k in nmf_rank) {
 
@@ -257,6 +268,28 @@ NMFprofileR <- function(
         basis_genes_list <- split(basis_genes_df$Gene, basis_genes_df$Factor)
         log_line("Rank k=", k, ": fitted; ", nrow(W), " genes assigned to ", k, " factors.")
 
+        # --- Specificity-scored marker genes (additionally emitted alongside
+        #     the argmax assignment; the argmax output is unchanged) ---
+        if (isTRUE(emit_marker_genes)) {
+          marker_genes_df <- nmf_marker_genes(nmf_result)
+          marker_genes_by_rank[[as.character(k)]] <- marker_genes_df
+          if (isTRUE(write_files) && nrow(marker_genes_df) > 0) {
+            dir.create(dirs$basis_genes, showWarnings = FALSE, recursive = TRUE)
+            readr::write_tsv(marker_genes_df, file.path(dirs$basis_genes, paste0("Marker_Genes_Rank_k", k, ".tsv")))
+          }
+          marker_genes_list <- split(marker_genes_df$Gene, marker_genes_df$Factor)
+          marker_gost <- perform_enrichment(
+            basis_genes_list = marker_genes_list,
+            organism = gprofiler_organism, cutoff = gprofiler_cutoff,
+            correction = gprofiler_correction, background_genes = final_nmf_genes,
+            sources = gprofiler_sources, output_dir = dirs$enrichment, k = k,
+            write_files = write_files, label = "Marker_Enrichment"
+          )
+          marker_valid <- marker_gost[!vapply(marker_gost, is.null, logical(1))]
+          marker_enrichment_by_rank[[as.character(k)]] <- dplyr::bind_rows(
+            lapply(marker_valid, function(g) g$result)
+          )
+        }
 
         # --- Enrichment (use named args to avoid positional matching issues) ---
         gost_objects_list <- perform_enrichment(
@@ -400,10 +433,12 @@ NMFprofileR <- function(
       rank_metrics = all_rank_metrics_df,
       fits = fits_by_rank,
       basis_genes = basis_genes_by_rank,
+      marker_genes = marker_genes_by_rank,
       sample_assignments = sample_assignments_by_rank,
       enrichment = list(
         per_factor = enrichment_per_factor_by_rank,
-        combined   = enrichment_combined_by_rank
+        combined   = enrichment_combined_by_rank,
+        markers    = marker_enrichment_by_rank
       ),
       nmf_rds = nmf_rds_paths,
       output_dirs = if (isTRUE(write_files)) dirs else NULL,

@@ -286,11 +286,16 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
   genes <- intersect(rownames(expr_matrix), genes)
 
   if (length(genes) > 1) {
-    W <- NMF::basis(nmf_result)   # genes x factors
     H <- NMF::coef(nmf_result)    # factors x samples
 
-    # simple assignments
-    row_factor <- paste0("Factor_", apply(W[genes, , drop = FALSE], 1, which.max))
+    # Group heatmap rows by the SAME upstream gene assignment used for the
+    # exported basis-gene table, so the figure and the table agree (rather than
+    # recomputing a fresh which.max on the basis matrix here).
+    gene_to_factor <- stats::setNames(
+      rep(names(basis_genes), lengths(basis_genes)),
+      unlist(basis_genes, use.names = FALSE)
+    )
+    row_factor <- unname(gene_to_factor[genes])
     col_factor <- paste0("Factor_", apply(H, 2, which.max))
 
     # prepare matrix (log transform if counts)

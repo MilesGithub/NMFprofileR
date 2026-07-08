@@ -35,6 +35,21 @@ test_that("the composable stages round-trip a fit", {
   expect_true(all(c("SampleID", "Dominant_Factor", "Silhouette_NMF") %in% names(sa)))
 })
 
+test_that("nmf_marker_genes returns a specificity-scored subset of genes", {
+  skip_on_cran()
+  skip_if_not_installed("NMF")
+
+  data("example_expression_data", package = "NMFprofileR")
+  m <- nmf_preprocess(example_expression_data, expression_threshold = 0, variance_quantile = 0)
+  fit <- nmf_fit(m, rank = 2, nrun = 2)
+  skip_if(is.null(fit), "NMF fit unavailable")
+
+  mk <- nmf_marker_genes(fit)
+  expect_true(all(c("Gene", "Factor") %in% names(mk)))
+  expect_true(all(mk$Gene %in% rownames(m)))     # markers are a subset
+  expect_true(nrow(mk) <= nrow(m))
+})
+
 test_that("nmf_profile print and summary methods work", {
   obj <- structure(
     list(

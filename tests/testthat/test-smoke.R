@@ -27,8 +27,9 @@ test_that("NMFprofileR() runs end-to-end on the example data", {
   expect_s3_class(res, "nmf_profile")
   expect_true(all(
     c("consolidated_summary_df", "rank_metrics", "fits", "basis_genes",
-      "sample_assignments", "enrichment", "provenance") %in% names(res)
+      "marker_genes", "sample_assignments", "enrichment", "provenance") %in% names(res)
   ))
+  expect_true(all(c("per_factor", "combined", "markers") %in% names(res$enrichment)))
   expect_s3_class(res$consolidated_summary_df, "data.frame")
   expect_gt(nrow(res$consolidated_summary_df), 0)
   # in-memory objects are returned, keyed by rank

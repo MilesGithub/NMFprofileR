@@ -114,6 +114,49 @@ nmf_basis_genes <- function(fit) {
   df[order(df$Factor, df$Gene), ]
 }
 
+#' Extract factor-specific marker genes by specificity score
+#'
+#' Unlike [nmf_basis_genes()] (which assigns *every* gene to its dominant factor
+#' by argmax), this selects only the genes that are specifically associated with
+#' each factor, using `NMF::extractFeatures()` (the Kim & Park specificity
+#' scoring). The result is a smaller, sharper set of marker genes per factor;
+#' many genes are intentionally left unassigned.
+#'
+#' @param fit An `NMFfit` object from [nmf_fit()].
+#'
+#' @return A tibble with columns `Gene` and `Factor`. Factors with no specific
+#'   markers contribute no rows.
+#' @seealso [nmf_basis_genes()], [nmf_enrichment()]
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' markers <- nmf_marker_genes(fit)
+#' split(markers$Gene, markers$Factor)
+#' }
+nmf_marker_genes <- function(fit) {
+  W <- NMF::basis(fit)
+  gene_names <- rownames(W)
+  k <- ncol(W)
+
+  feats <- tryCatch(NMF::extractFeatures(fit), error = function(e) NULL)
+
+  per_factor <- lapply(seq_len(k), function(i) {
+    idx <- if (is.list(feats) && length(feats) >= i) feats[[i]] else NULL
+    if (is.null(idx) || length(idx) == 0 || all(is.na(idx))) return(NULL)
+    idx <- idx[!is.na(idx)]
+    genes <- if (is.numeric(idx)) gene_names[idx] else as.character(idx)
+    genes <- genes[!is.na(genes)]
+    if (length(genes) == 0) return(NULL)
+    tibble::tibble(Gene = genes, Factor = paste0("Factor_", i))
+  })
+
+  df <- do.call(rbind, per_factor)
+  if (is.null(df)) df <- tibble::tibble(Gene = character(), Factor = character())
+  df$Factor <- factor(df$Factor, levels = paste0("Factor_", 1:k))
+  df[order(df$Factor, df$Gene), ]
+}
+
 #' Assign samples to their dominant NMF factor with silhouette widths
 #'
 #' Assigns every sample to its dominant coefficient factor (argmax over the

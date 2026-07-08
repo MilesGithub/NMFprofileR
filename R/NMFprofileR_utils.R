@@ -306,7 +306,8 @@ perform_enrichment <- function(basis_genes_list,
                                sources,
                                output_dir,
                                k,
-                               write_files = TRUE) {
+                               write_files = TRUE,
+                               label = "Enrichment") {
   cli::cli_alert_info("Performing per-factor functional enrichment (k={k})...")
 
   all_results <- lapply(names(basis_genes_list), function(factor_name) {
@@ -335,7 +336,7 @@ perform_enrichment <- function(basis_genes_list,
 
     if (!is.null(gost_res) && is.data.frame(gost_res$result) && nrow(gost_res$result) > 0) {
       if (isTRUE(write_files)) {
-        readr::write_tsv(gost_res$result, file.path(output_dir, paste0("Enrichment_Rank_k", k, "_", factor_name, ".tsv")))
+        readr::write_tsv(gost_res$result, file.path(output_dir, paste0(label, "_Rank_k", k, "_", factor_name, ".tsv")))
       }
       return(gost_res)
     } else {

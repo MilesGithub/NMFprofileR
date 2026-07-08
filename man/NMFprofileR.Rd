@@ -21,7 +21,8 @@ NMFprofileR(
   enrichment_plot_top_n = 50,
   verbose = FALSE,
   write_files = TRUE,
-  on_duplicate_genes = c("collapse_max", "collapse_mean", "error")
+  on_duplicate_genes = c("collapse_max", "collapse_mean", "error"),
+  emit_marker_genes = TRUE
 )
 }
 \arguments{
@@ -88,6 +89,13 @@ tests (which must not write outside `tempdir()`).}
 rownames of `expression_data`: `"collapse_max"` (the default) keeps the
 per-sample maximum across duplicate rows (the most expressed probe),
 `"collapse_mean"` averages them, and `"error"` stops with a message.}
+
+\item{emit_marker_genes}{A logical value. If TRUE (the default), in addition
+to the argmax basis-gene assignment the pipeline also extracts
+factor-specific marker genes (`NMF::extractFeatures`, Kim-Park specificity)
+and runs enrichment on them, emitting `Marker_Genes_*` and
+`Marker_Enrichment_*` outputs alongside the argmax results. The argmax
+assignment remains the primary, unchanged output.}
 }
 \value{
 Invisibly, an S3 object of class `nmf_profile` (a list underneath, so
@@ -98,12 +106,14 @@ Invisibly, an S3 object of class `nmf_profile` (a list underneath, so
     \item{`rank_metrics`}{A data frame of quality metrics from the
       `NMF::nmfEstimateRank` rank survey (empty if the survey failed).}
     \item{`fits`}{A named list of the fitted `NMFfit` objects, keyed by rank.}
-    \item{`basis_genes`}{A named list of per-rank basis-gene tables
-      (gene to dominant factor).}
+    \item{`basis_genes`}{A named list of per-rank basis-gene tables (every
+      gene to its dominant factor, by argmax).}
+    \item{`marker_genes`}{A named list of per-rank factor-specific marker-gene
+      tables (specificity-scored; only when `emit_marker_genes = TRUE`).}
     \item{`sample_assignments`}{A named list of per-rank sample-assignment
       tables (sample to dominant factor, with silhouette widths).}
-    \item{`enrichment`}{A list with `per_factor` and `combined` named lists of
-      per-rank g:Profiler enrichment data frames.}
+    \item{`enrichment`}{A list with `per_factor`, `combined`, and `markers`
+      named lists of per-rank g:Profiler enrichment data frames.}
     \item{`nmf_rds`}{A named list of file paths to the saved NMF fit objects
       (empty when `write_files = FALSE`).}
     \item{`output_dirs`}{A named list of the output directories created for
