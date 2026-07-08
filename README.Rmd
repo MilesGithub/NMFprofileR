@@ -14,23 +14,27 @@
 ## Features
 
 - Multi-rank NMF with reproducible results (`brunet`, `lee`, and others).
-- Per-factor basis gene extraction using all genes assigned to each factor.
-- Automated generation of:
-  - Rank survey plots
-  - Consensus maps
-  - Factor correspondence heatmaps
-  - Consolidated summary metrics
+- Composable, exported pipeline stages returning results in memory, and an
+  `nmf_profile` result object.
+- Per-factor basis gene assignment (argmax) plus specificity-scored marker genes.
+- Automated generation of rank survey/diagnostics plots, consensus maps, factor
+  correspondence heatmaps, and consolidated summary metrics.
 - Supports user-defined gene backgrounds for enrichment analysis.
-- Clean output directories for reproducible workflows.
+- Reproducibility: run manifest, g:Profiler database version, and session info.
 
 ---
 
 ## Installation
 
-Install directly from GitHub using `devtools`:
+Install directly from GitHub using `devtools`. NMFprofileR depends on the
+Bioconductor packages `ComplexHeatmap` and `circlize`, so make the Bioconductor
+repositories available first (otherwise the install fails to resolve them):
 
 ```r
-# install.packages("devtools")
+# install.packages(c("devtools", "BiocManager"))
+setRepositories(ind = c(1, 2))   # enable CRAN + Bioconductor
+# or: options(repos = BiocManager::repositories())
+
 devtools::install_github("MilesGithub/NMFprofileR")
 ```
 
@@ -45,11 +49,10 @@ library(NMFprofileR)
 data("example_expression_data")
 
 # Run the NMFprofileR pipeline
-results <- NMFprofileR(
+result <- NMFprofileR(
   expression_data          = example_expression_data,
   nmf_rank                 = 2:5,
   output_prefix            = "results/NMF",
-  gene_list_filter_file    = NULL,
   nmf_method               = "brunet",
   nmf_nrun                 = 20,
   gprofiler_organism       = "hsapiens",
@@ -58,17 +61,34 @@ results <- NMFprofileR(
 )
 ```
 
+`NMFprofileR()` returns an `nmf_profile` object that carries the results in
+memory (in addition to writing them to disk):
+
+```r
+result                       # compact overview (print method)
+summary(result)              # consolidated per-factor metrics across ranks
+result$fits[["3"]]           # fitted NMF object for k = 3
+result$basis_genes[["3"]]    # gene -> dominant factor table
+result$marker_genes[["3"]]   # factor-specific marker genes
+```
+
+Set `write_files = FALSE` to compute entirely in memory without creating files.
+The pipeline stages are also exported for composable use: `nmf_preprocess()`,
+`nmf_fit()`, `nmf_basis_genes()`, `nmf_marker_genes()`,
+`nmf_sample_assignments()`, `nmf_enrichment()`, and `nmf_rank_diagnostics()`.
+
 ---
 
 ## Output
 
-The pipeline generates:
+With `output_prefix = "results/NMF"` the pipeline writes to `results/NMF_Results/`:
 
-- `results/NMF/nmf_core/` — NMF R objects per rank.  
-- `results/NMF/basis_genes/` — Per-factor gene assignments (all genes).  
-- `results/NMF/enrichment/` — Factor-specific and combined enrichment results.  
-- `results/NMF/plots/` — Publication-quality heatmaps and consensus plots.  
-- `results/NMF/summaries/` — Consolidated summary of all ranks and factors.  
+- `NMF_Core_Objects/` — fitted NMF objects per rank (`.rds`).
+- `Basis_Genes/` — per-factor gene assignments and marker genes.
+- `Enrichment_Results/` — per-factor and combined enrichment tables.
+- `Sample_Assignments/` — sample-to-factor assignments with silhouette widths.
+- `Plots/` — heatmaps, consensus/diagnostic maps, UMAP, and enrichment plots.
+- `Summaries/` — consolidated summary, run manifest, and session info.
 
 ---
 

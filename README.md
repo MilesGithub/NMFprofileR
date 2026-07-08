@@ -20,15 +20,16 @@ consolidated summary and consensus maps.
 
 -   Multi-rank NMF with reproducible results (`brunet`, `lee`, and
     others).
--   Per-factor basis gene extraction using all genes assigned to each
-    factor.
--   Automated generation of:
-    -   Rank survey plots
-    -   Consensus maps
-    -   Factor correspondence heatmaps
-    -   Consolidated summary metrics
+-   Composable, exported pipeline stages returning results in memory, and
+    an `nmf_profile` result object.
+-   Per-factor basis gene assignment (argmax) plus specificity-scored
+    marker genes.
+-   Automated generation of rank survey/diagnostics plots, consensus
+    maps, factor correspondence heatmaps, and consolidated summary
+    metrics.
 -   Supports user-defined gene backgrounds for enrichment analysis.
--   Clean output directories for reproducible workflows.
+-   Reproducibility: run manifest, g:Profiler database version, and
+    session info.
 
 ------------------------------------------------------------------------
 
@@ -84,17 +85,17 @@ The pipeline stages are also exported for composable use:
 
 ## Output
 
-The pipeline generates:
+With `output_prefix = "results/NMF"` the pipeline writes to
+`results/NMF_Results/`:
 
--   `results/NMF/nmf_core/` — NMF R objects per rank.  
--   `results/NMF/basis_genes/` — Per-factor gene assignments (all
-    genes).  
--   `results/NMF/enrichment/` — Factor-specific and combined enrichment
-    results.  
--   `results/NMF/plots/` — Publication-quality heatmaps and consensus
+-   `NMF_Core_Objects/` — fitted NMF objects per rank (`.rds`).  
+-   `Basis_Genes/` — per-factor gene assignments and marker genes.  
+-   `Enrichment_Results/` — per-factor and combined enrichment tables.  
+-   `Sample_Assignments/` — sample-to-factor assignments with silhouette
+    widths.  
+-   `Plots/` — heatmaps, consensus/diagnostic maps, UMAP, and enrichment
     plots.  
--   `results/NMF/summaries/` — Consolidated summary of all ranks and
-    factors.
+-   `Summaries/` — consolidated summary, run manifest, and session info.
 
 ------------------------------------------------------------------------
 
