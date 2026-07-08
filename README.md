@@ -34,9 +34,14 @@ consolidated summary and consensus maps.
 
 ## Installation
 
-Install directly from GitHub using `devtools`:
+Install directly from GitHub using `devtools`. NMFprofileR depends on the
+Bioconductor packages `ComplexHeatmap` and `circlize`, so make the Bioconductor
+repositories available first (otherwise the install fails to resolve them):
 
-    # install.packages("devtools")
+    # install.packages(c("devtools", "BiocManager"))
+    setRepositories(ind = c(1, 2))   # enable CRAN + Bioconductor
+    # or: options(repos = BiocManager::repositories())
+
     devtools::install_github("MilesGithub/NMFprofileR")
 
 ------------------------------------------------------------------------
@@ -49,17 +54,31 @@ Install directly from GitHub using `devtools`:
     data("example_expression_data")
 
     # Run the NMFprofileR pipeline
-    results <- NMFprofileR(
+    result <- NMFprofileR(
       expression_data          = example_expression_data,
       nmf_rank                 = 2:5,
       output_prefix            = "results/NMF",
-      gene_list_filter_file    = NULL,
       nmf_method               = "brunet",
       nmf_nrun                 = 20,
       gprofiler_organism       = "hsapiens",
       gprofiler_sources        = c("GO:BP","GO:MF","GO:CC","REAC","TF"),
       gprofiler_cutoff         = 0.05
     )
+
+`NMFprofileR()` returns an `nmf_profile` object that carries the results in
+memory (in addition to writing them to disk):
+
+    result                       # compact overview (print method)
+    summary(result)              # consolidated per-factor metrics across ranks
+    result$fits[["3"]]           # fitted NMF object for k = 3
+    result$basis_genes[["3"]]    # gene -> dominant factor table
+    result$marker_genes[["3"]]   # factor-specific marker genes
+
+Set `write_files = FALSE` to compute entirely in memory without creating files.
+
+The pipeline stages are also exported for composable use:
+`nmf_preprocess()`, `nmf_fit()`, `nmf_basis_genes()`, `nmf_marker_genes()`,
+`nmf_sample_assignments()`, `nmf_enrichment()`, and `nmf_rank_diagnostics()`.
 
 ------------------------------------------------------------------------
 

@@ -1,7 +1,7 @@
 Package: NMFprofileR
 Type: Package
 Title: Consensus NMF Profiling and Functional Enrichment of Transcriptomic Data
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: 
     person(
       given = "Miles",
