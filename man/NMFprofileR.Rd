@@ -60,8 +60,15 @@ g:Profiler enrichment analysis (e.g., 'hsapiens', 'mmusculus').}
 \item{gprofiler_sources}{A character vector of data sources to query in
 g:Profiler (e.g., c("GO:BP", "REAC", "KEGG")).}
 
-\item{gprofiler_correction}{A character string specifying the multiple testing
-correction method used by g:Profiler.}
+\item{gprofiler_correction}{A character string specifying the multiple-testing
+correction method used by g:Profiler. Defaults to `"g_SCS"`, g:Profiler's
+native Set Counts and Sizes method, which accounts for the overlapping,
+hierarchical structure of GO and pathway terms and is generally more
+appropriate (and less conservative) there than Bonferroni or Benjamini-
+Hochberg FDR. The query uses a custom background of the genes that survive
+preprocessing (`custom_bg`), so enrichment is assessed against the tested
+gene universe rather than the whole genome. Alternatives (`"fdr"`,
+`"bonferroni"`) are accepted for reviewer familiarity at some loss of power.}
 
 \item{gprofiler_cutoff}{A numeric value for the significance threshold for
 enrichment results.}
