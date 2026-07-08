@@ -19,7 +19,8 @@ NMFprofileR(
   gprofiler_correction = "g_SCS",
   gprofiler_cutoff = 0.05,
   enrichment_plot_top_n = 50,
-  verbose = FALSE
+  verbose = FALSE,
+  write_files = TRUE
 )
 }
 \arguments{
@@ -68,6 +69,12 @@ enrichment results.}
 terms to display in the summary dot plots.}
 
 \item{verbose}{A logical value. If TRUE, prints detailed messages. Defaults to FALSE.}
+
+\item{write_files}{A logical value. If TRUE (the default), all results, plots,
+and log files are written to disk under `output_prefix`. If FALSE, nothing
+is written and no directories are created; the pipeline computes in memory
+and returns its results only. Useful for programmatic use, examples, and
+tests (which must not write outside `tempdir()`).}
 }
 \value{
 Invisibly, a named list with six elements:
@@ -79,15 +86,15 @@ Invisibly, a named list with six elements:
     \item{`nmf_rds`}{A named list of file paths to the saved NMF fit objects,
       keyed by rank.}
     \item{`output_dirs`}{A named list of the output directories created for
-      the run.}
+      the run, or `NULL` when `write_files = FALSE`.}
     \item{`runtime`}{A `difftime` giving the total pipeline runtime.}
     \item{`provenance`}{A named list recording the captured g:Profiler
       database version (`gprofiler_version`), the `run_parameters` used, and
       the paths of the manifest and session-information files written
       (`files`), for reproducibility.}
   }
-  All detailed results, plots, and log files are additionally written to disk
-  under the location specified by `output_prefix`.
+  Unless `write_files = FALSE`, all detailed results, plots, and log files are
+  additionally written to disk under the location specified by `output_prefix`.
 }
 \description{
 This function is the main entry point for the NMFprofileR workflow. It

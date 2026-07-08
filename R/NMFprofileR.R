@@ -47,6 +47,11 @@
 #' @param enrichment_plot_top_n An integer specifying the number of top enriched
 #'   terms to display in the summary dot plots.
 #' @param verbose A logical value. If TRUE, prints detailed messages. Defaults to FALSE.
+#' @param write_files A logical value. If TRUE (the default), all results, plots,
+#'   and log files are written to disk under `output_prefix`. If FALSE, nothing
+#'   is written and no directories are created; the pipeline computes in memory
+#'   and returns its results only. Useful for programmatic use, examples, and
+#'   tests (which must not write outside `tempdir()`).
 #'
 #' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
 #' @importFrom cluster silhouette
@@ -60,15 +65,15 @@
 #'     \item{`nmf_rds`}{A named list of file paths to the saved NMF fit objects,
 #'       keyed by rank.}
 #'     \item{`output_dirs`}{A named list of the output directories created for
-#'       the run.}
+#'       the run, or `NULL` when `write_files = FALSE`.}
 #'     \item{`runtime`}{A `difftime` giving the total pipeline runtime.}
 #'     \item{`provenance`}{A named list recording the captured g:Profiler
 #'       database version (`gprofiler_version`), the `run_parameters` used, and
 #'       the paths of the manifest and session-information files written
 #'       (`files`), for reproducibility.}
 #'   }
-#'   All detailed results, plots, and log files are additionally written to disk
-#'   under the location specified by `output_prefix`.
+#'   Unless `write_files = FALSE`, all detailed results, plots, and log files are
+#'   additionally written to disk under the location specified by `output_prefix`.
 #'
 #' @export
 #'
@@ -87,7 +92,8 @@ NMFprofileR <- function(
     gprofiler_correction = "g_SCS",
     gprofiler_cutoff = 0.05,
     enrichment_plot_top_n = 50,
-    verbose = FALSE
+    verbose = FALSE,
+    write_files = TRUE
 ) {
   # --- Helper for verbose/debug messages ---
   vmsg <- function(...) {
@@ -105,17 +111,30 @@ NMFprofileR <- function(
   output_prefix <- sub("/+$", "", as.character(output_prefix))
   if (nzchar(output_prefix) == FALSE) stop("`output_prefix` must be a non-empty string.", call. = FALSE)
 
-  dirs <- setup_directories(output_prefix)
+  dirs <- setup_directories(output_prefix, create = write_files)
   file_prefix <- basename(output_prefix)
 
-  # Open log sink safely; ensure all sinks closed on exit
+  # File-connection logger. This replaces a global output sink so the run no
+  # longer hijacks the console (and no longer captures unrelated packages'
+  # output). Console output continues via cli; milestone lines are appended to
+  # the run log only when file writing is enabled.
   log_file_path <- file.path(dirs$main, paste0(file_prefix, "_run_log.txt"))
-  sink(log_file_path, append = TRUE, split = TRUE)
-  on.exit({
-    # close any opened sinks
-    while (sink.number() > 0) sink(NULL)
-    cli::cli_alert_success("Log file saved to: {.path {log_file_path}}")
-  }, add = TRUE)
+  log_con <- NULL
+  if (isTRUE(write_files)) {
+    dir.create(dirs$main, showWarnings = FALSE, recursive = TRUE)
+    log_con <- file(log_file_path, open = "at")
+    on.exit({
+      if (!is.null(log_con)) try(close(log_con), silent = TRUE)
+      cli::cli_alert_success("Log file saved to: {.path {log_file_path}}")
+    }, add = TRUE)
+  }
+  log_line <- function(...) {
+    if (is.null(log_con)) return(invisible())
+    cat(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "  ", paste0(...), "\n",
+        sep = "", file = log_con)
+  }
+  log_line("NMFprofileR run started (seed=", nmf_seed, ", method=", nmf_method,
+           ", ranks=", paste(range(nmf_rank), collapse = "-"), ").")
 
   # --- Preprocessing ---
   cli::cli_h2("Step 1: Preprocessing Expression Matrix")
@@ -162,12 +181,14 @@ NMFprofileR <- function(
 
   all_rank_metrics_df <- data.frame()
   if (!is.null(estim_real)) {
-    plot_path <- file.path(dirs$plots, "02_Rank_Survey_Plot.pdf")
-    cli::cli_alert_info("Saving rank survey plot to: {.path {basename(plot_path)}}")
-    grDevices::pdf(plot_path, width = 10, height = 7)
-    suppressWarnings(print(plot(estim_real)))
-    grDevices::dev.off()
     all_rank_metrics_df <- as.data.frame(summary(estim_real))
+    if (isTRUE(write_files)) {
+      plot_path <- file.path(dirs$plots, "02_Rank_Survey_Plot.pdf")
+      cli::cli_alert_info("Saving rank survey plot to: {.path {basename(plot_path)}}")
+      grDevices::pdf(plot_path, width = 10, height = 7)
+      suppressWarnings(print(plot(estim_real)))
+      grDevices::dev.off()
+    }
   } else {
     cli::cli_alert_warning("Rank estimation returned NULL; continuing to run specified ranks.")
   }
@@ -182,7 +203,8 @@ NMFprofileR <- function(
 
     cli::cli_rule(left = paste("Processing Rank k =", k))
     vmsg("Running NMF for k = {k} ...")
-    nmf_result <- run_nmf_for_rank(k, expr_matrix, nmf_method, nmf_nrun, nmf_seed, dirs$nmf_core, file_prefix)
+    nmf_result <- run_nmf_for_rank(k, expr_matrix, nmf_method, nmf_nrun, nmf_seed, dirs$nmf_core, file_prefix,
+                                   write_files = write_files)
 
     if (!is.null(nmf_result)) {
 
@@ -217,15 +239,17 @@ NMFprofileR <- function(
         )
         basis_genes_df <- basis_genes_df[order(basis_genes_df$Factor, basis_genes_df$Gene), ]
 
-        # Ensure directory exists
-        dir.create(dirs$basis_genes, showWarnings = FALSE, recursive = TRUE)
-        readr::write_tsv(
-          basis_genes_df,
-          file.path(dirs$basis_genes, paste0("Basis_Genes_Rank_k", k, ".tsv"))
-        )
+        if (isTRUE(write_files)) {
+          dir.create(dirs$basis_genes, showWarnings = FALSE, recursive = TRUE)
+          readr::write_tsv(
+            basis_genes_df,
+            file.path(dirs$basis_genes, paste0("Basis_Genes_Rank_k", k, ".tsv"))
+          )
+        }
 
         # Split into list
         basis_genes_list <- split(basis_genes_df$Gene, basis_genes_df$Factor)
+        log_line("Rank k=", k, ": fitted; ", nrow(W), " genes assigned to ", k, " factors.")
 
 
         # --- Enrichment (use named args to avoid positional matching issues) ---
@@ -237,7 +261,8 @@ NMFprofileR <- function(
           background_genes = final_nmf_genes,
           sources = gprofiler_sources,
           output_dir = dirs$enrichment,
-          k = k
+          k = k,
+          write_files = write_files
         )
 
         # filter NULLs before binding
@@ -258,7 +283,8 @@ NMFprofileR <- function(
           background_genes = final_nmf_genes,
           sources = gprofiler_sources,
           output_dir = dirs$enrichment,
-          k = k
+          k = k,
+          write_files = write_files
         )
         if (is.null(combined_enrichment_results_df)) combined_enrichment_results_df <- data.frame()
 
@@ -295,10 +321,12 @@ NMFprofileR <- function(
         ]
 
         # Save
-        readr::write_tsv(
-          sample_assignments,
-          file.path(dirs$sample_assignments, paste0("Sample_Assignments_Rank_k", k, ".tsv"))
-        )
+        if (isTRUE(write_files)) {
+          readr::write_tsv(
+            sample_assignments,
+            file.path(dirs$sample_assignments, paste0("Sample_Assignments_Rank_k", k, ".tsv"))
+          )
+        }
 
         # --- Rank summary & plots ---
         k_summary_df <- generate_rank_summary(
@@ -312,37 +340,41 @@ NMFprofileR <- function(
         )
         all_summaries_list[[as.character(k)]] <- k_summary_df
 
-        k_plots_dir <- file.path(dirs$plots, paste0("Rank_k", k))
-        dir.create(k_plots_dir, showWarnings = FALSE, recursive = TRUE)
-        generate_rank_plots(
-          k = k,
-          nmf_result = nmf_result,
-          sample_assignments = sample_assignments,
-          combined_gprofiler_df = combined_gprofiler_df,
-          combined_enrichment_results_df = combined_enrichment_results_df,
-          expr_matrix = expr_matrix,
-          basis_genes = basis_genes_list,
-          k_plots_dir = k_plots_dir,
-          file_prefix = file_prefix,
-          nrun = nmf_nrun,
-          top_n = enrichment_plot_top_n,
-          gost_objects_list = gost_objects_list,
-          nmf_seed = nmf_seed
-        )
+        if (isTRUE(write_files)) {
+          k_plots_dir <- file.path(dirs$plots, paste0("Rank_k", k))
+          dir.create(k_plots_dir, showWarnings = FALSE, recursive = TRUE)
+          generate_rank_plots(
+            k = k,
+            nmf_result = nmf_result,
+            sample_assignments = sample_assignments,
+            combined_gprofiler_df = combined_gprofiler_df,
+            combined_enrichment_results_df = combined_enrichment_results_df,
+            expr_matrix = expr_matrix,
+            basis_genes = basis_genes_list,
+            k_plots_dir = k_plots_dir,
+            file_prefix = file_prefix,
+            nrun = nmf_nrun,
+            top_n = enrichment_plot_top_n,
+            gost_objects_list = gost_objects_list,
+            nmf_seed = nmf_seed
+          )
+        }
       }
     }
     # --- Finalize and Global Plots ---
     cli::cli_h2("Step 4: Finalizing and Generating Global Summary Plots")
     consolidated_summary_df <- if (length(all_summaries_list) > 0) dplyr::bind_rows(all_summaries_list) else tibble::tibble()
-    dir.create(dirs$summaries, showWarnings = FALSE, recursive = TRUE)
-    if (nrow(consolidated_summary_df) > 0) readr::write_tsv(consolidated_summary_df, file.path(dirs$summaries, "Consolidated_Summary.tsv"))
+    if (isTRUE(write_files)) {
+      dir.create(dirs$summaries, showWarnings = FALSE, recursive = TRUE)
+      if (nrow(consolidated_summary_df) > 0) readr::write_tsv(consolidated_summary_df, file.path(dirs$summaries, "Consolidated_Summary.tsv"))
 
-    # generate global plots (guard if summary empty)
-    tryCatch({
-      generate_global_plots(all_rank_metrics_df, consolidated_summary_df, nmf_rank, nmf_nrun, dirs, file_prefix)
-    }, error = function(e) {
-      cli::cli_alert_warning("generate_global_plots() failed: {conditionMessage(e)}")
-    })
+      # generate global plots (guard if summary empty)
+      tryCatch({
+        generate_global_plots(all_rank_metrics_df, consolidated_summary_df, nmf_rank, nmf_nrun, dirs, file_prefix)
+      }, error = function(e) {
+        cli::cli_alert_warning("generate_global_plots() failed: {conditionMessage(e)}")
+      })
+    }
 
     time_end <- Sys.time()
     runtime <- difftime(time_end, time_start)
@@ -367,20 +399,24 @@ NMFprofileR <- function(
       run_parameters    = run_parameters,
       files             = NULL
     )
-    provenance$files <- tryCatch(
-      write_run_provenance(dirs, file_prefix, run_parameters, gprofiler_version, runtime),
-      error = function(e) {
-        cli::cli_alert_warning("Failed to write run provenance: {conditionMessage(e)}")
-        NULL
-      }
-    )
+    if (isTRUE(write_files)) {
+      provenance$files <- tryCatch(
+        write_run_provenance(dirs, file_prefix, run_parameters, gprofiler_version, runtime),
+        error = function(e) {
+          cli::cli_alert_warning("Failed to write run provenance: {conditionMessage(e)}")
+          NULL
+        }
+      )
+    }
+    log_line("Run finished in ", format(runtime), "; ",
+             length(all_summaries_list), " rank(s) completed.")
 
     # Return a programmatically useful list while keeping consolidated_summary_df as main item
     result <- list(
       consolidated_summary_df = consolidated_summary_df,
       rank_metrics = all_rank_metrics_df,
       nmf_rds = nmf_rds_paths,
-      output_dirs = dirs,
+      output_dirs = if (isTRUE(write_files)) dirs else NULL,
       runtime = runtime,
       provenance = provenance
     )

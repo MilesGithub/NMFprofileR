@@ -7,12 +7,15 @@
 #'
 #' @param output_prefix A character string defining the base path and file name
 #'   prefix for the analysis. For example, "results/MyAnalysis".
+#' @param create A logical value. If TRUE (the default), the directories are
+#'   created on disk; if FALSE, only the path list is returned (used when the
+#'   caller runs with `write_files = FALSE`).
 #'
 #' @return A named list where each element is the full path to one of the
-#'   created subdirectories (e.g., `dirs$plots`, `dirs$summaries`).
+#'   subdirectories (e.g., `dirs$plots`, `dirs$summaries`).
 #'
 #' @noRd
-setup_directories <- function(output_prefix) {
+setup_directories <- function(output_prefix, create = TRUE) {
   output_prefix <- sub("/+$", "", as.character(output_prefix))
   file_prefix <- basename(output_prefix)
   base_dir <- dirname(output_prefix)
@@ -30,7 +33,9 @@ setup_directories <- function(output_prefix) {
     summaries = file.path(main_results_dir, "Summaries")
   )
 
-  invisible(lapply(dirs, dir.create, showWarnings = FALSE, recursive = TRUE))
+  if (isTRUE(create)) {
+    invisible(lapply(dirs, dir.create, showWarnings = FALSE, recursive = TRUE))
+  }
 
   return(dirs)
 }
@@ -157,11 +162,14 @@ normalize_predict <- function(raw, expected_length, axis = c("features", "sample
 #' @param seed An integer seed for reproducibility.
 #' @param nmf_core_dir The path to the output directory for saving the NMF object.
 #' @param file_prefix The base prefix for the output file name.
+#' @param write_files Logical; if TRUE (default) the fit is saved to disk as an
+#'   `.rds` file, otherwise nothing is written.
 #'
 #' @return The `NMFfit` object, or `NULL` if the NMF execution fails.
 #'
 #' @noRd
-run_nmf_for_rank <- function(k, expr_matrix, method, nrun, seed, nmf_core_dir, file_prefix) {
+run_nmf_for_rank <- function(k, expr_matrix, method, nrun, seed, nmf_core_dir, file_prefix,
+                             write_files = TRUE) {
   cli::cli_alert_info("Running Consensus NMF (k={k}, nrun={nrun})...")
 
   is_windows <- tolower(.Platform$OS.type) == "windows"
@@ -177,7 +185,7 @@ run_nmf_for_rank <- function(k, expr_matrix, method, nrun, seed, nmf_core_dir, f
     return(NULL)
   })
 
-  if (!is.null(nmf_result)) {
+  if (!is.null(nmf_result) && isTRUE(write_files)) {
     save_path <- file.path(nmf_core_dir, paste0("NMF_Result_Object_Rank_k", k, ".rds"))
     dir.create(nmf_core_dir, showWarnings = FALSE, recursive = TRUE)
     saveRDS(nmf_result, save_path)
@@ -211,7 +219,8 @@ perform_enrichment <- function(basis_genes_list,
                                background_genes,
                                sources,
                                output_dir,
-                               k) {
+                               k,
+                               write_files = TRUE) {
   cli::cli_alert_info("Performing per-factor functional enrichment (k={k})...")
 
   all_results <- lapply(names(basis_genes_list), function(factor_name) {
@@ -239,7 +248,9 @@ perform_enrichment <- function(basis_genes_list,
     })
 
     if (!is.null(gost_res) && is.data.frame(gost_res$result) && nrow(gost_res$result) > 0) {
-      readr::write_tsv(gost_res$result, file.path(output_dir, paste0("Enrichment_Rank_k", k, "_", factor_name, ".tsv")))
+      if (isTRUE(write_files)) {
+        readr::write_tsv(gost_res$result, file.path(output_dir, paste0("Enrichment_Rank_k", k, "_", factor_name, ".tsv")))
+      }
       return(gost_res)
     } else {
       return(NULL)
@@ -273,9 +284,10 @@ perform_combined_enrichment <- function(basis_genes_list,
                                         background_genes,
                                         sources,
                                         output_dir,
-                                        k) {
+                                        k,
+                                        write_files = TRUE) {
   cli::cli_alert_info("Performing combined enrichment on all basis genes (k={k})...")
-  dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+  if (isTRUE(write_files)) dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
   combined_genes <- unique(unlist(basis_genes_list))
   if (length(combined_genes) < 5) return(data.frame())
@@ -298,8 +310,10 @@ perform_combined_enrichment <- function(basis_genes_list,
   })
 
   if (!is.null(gost_res) && is.data.frame(gost_res$result) && nrow(gost_res$result) > 0) {
-    out_path <- file.path(output_dir, paste0("Enrichment_Rank_k", k, "_All_Factors_Combined.tsv"))
-    readr::write_tsv(gost_res$result, out_path)
+    if (isTRUE(write_files)) {
+      out_path <- file.path(output_dir, paste0("Enrichment_Rank_k", k, "_All_Factors_Combined.tsv"))
+      readr::write_tsv(gost_res$result, out_path)
+    }
     return(gost_res$result)
   }
 
