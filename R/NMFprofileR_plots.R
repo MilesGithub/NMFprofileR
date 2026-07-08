@@ -403,6 +403,21 @@ generate_global_plots <- function(rank_metrics, consolidated_summary_df, nmf_ran
 
   cli::cli_h2("Generating final summary files and global plots...")
 
+  # --- Rank diagnostics: cophenetic / dispersion / silhouette across ranks ---
+  diag_df <- tryCatch(nmf_rank_diagnostics(rank_metrics), error = function(e) NULL)
+  if (!is.null(diag_df) && nrow(diag_df) > 0) {
+    cli::cli_alert_info("Generating {.path 05_Rank_Diagnostics.pdf}")
+    diag_plot <- ggplot2::ggplot(diag_df, ggplot2::aes(x = .data$rank, y = .data$value)) +
+      ggplot2::geom_line(color = "#0073c2") +
+      ggplot2::geom_point(color = "#0073c2") +
+      ggplot2::facet_wrap(~ .data$metric, scales = "free_y") +
+      ggplot2::labs(title = "NMF rank-selection diagnostics", x = "Rank (k)", y = NULL) +
+      ggplot2::theme_bw(base_size = 11) + custom_theme()
+    grDevices::pdf(file.path(dirs$plots, "05_Rank_Diagnostics.pdf"), 9, 4)
+    print(diag_plot)
+    grDevices::dev.off()
+  }
+
   # --- Plot 1: Consolidated Summary Heatmap ---
   if (nrow(consolidated_summary_df) > 0) {
     summary_matrix <- consolidated_summary_df %>%

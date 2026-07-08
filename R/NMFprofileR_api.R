@@ -189,6 +189,45 @@ nmf_enrichment <- function(basis_genes_list,
   list(per_factor = per_factor, combined = combined)
 }
 
+#' Tidy NMF rank-selection diagnostics
+#'
+#' Lays the key rank-selection metrics side by side across the tested ranks so
+#' the "authoritative" component count can be chosen (typically the largest
+#' cophenetic correlation before it drops, or a silhouette peak). Works on the
+#' `rank_metrics` produced by [NMFprofileR()] (via `NMF::nmfEstimateRank`).
+#'
+#' @param x An `nmf_profile` object from [NMFprofileR()], or a `rank_metrics`
+#'   data frame directly.
+#' @param metrics Character vector of metrics to extract; matched case-insensitively
+#'   and by prefix (so `"silhouette"` matches `silhouette.consensus`). Metrics
+#'   not present in the data are silently skipped.
+#'
+#' @return A tibble in long form with columns `rank`, `metric`, and `value`.
+#' @export
+#'
+#' @examples
+#' rm <- data.frame(rank = 2:4, cophenetic = c(0.99, 0.95, 0.88),
+#'                  dispersion = c(0.9, 0.8, 0.7), silhouette = c(0.6, 0.5, 0.4))
+#' nmf_rank_diagnostics(rm)
+nmf_rank_diagnostics <- function(x, metrics = c("cophenetic", "dispersion", "silhouette")) {
+  df <- if (inherits(x, "nmf_profile")) x$rank_metrics else as.data.frame(x)
+  if (is.null(df) || nrow(df) == 0) {
+    return(tibble::tibble(rank = numeric(), metric = character(), value = numeric()))
+  }
+
+  cols <- names(df)
+  rank_hit <- cols[tolower(cols) == "rank"]
+  ranks <- if (length(rank_hit) >= 1) df[[rank_hit[1]]] else seq_len(nrow(df))
+
+  parts <- lapply(metrics, function(m) {
+    hit <- cols[tolower(cols) == tolower(m)]
+    if (length(hit) == 0) hit <- cols[startsWith(tolower(cols), tolower(m))]
+    if (length(hit) == 0) return(NULL)
+    tibble::tibble(rank = as.numeric(ranks), metric = m, value = as.numeric(df[[hit[1]]]))
+  })
+  dplyr::bind_rows(parts)
+}
+
 #' Print an NMFprofileR result
 #'
 #' @param x An `nmf_profile` object returned (invisibly) by [NMFprofileR()].
