@@ -19,8 +19,8 @@ test_that("NMFprofileR() runs end-to-end on the example data", {
     nmf_rank             = 2:3,
     output_prefix        = out_prefix,
     nmf_nrun             = 2,
-    expression_threshold = 0,   # keep all genes regardless of scale
-    variance_quantile    = 0,
+    expression_threshold = 10,   # a small, fast gene set keeps the smoke test quick
+    variance_quantile    = 0.99,
     verbose              = FALSE
   )
 

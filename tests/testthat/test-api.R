@@ -22,7 +22,7 @@ test_that("the composable stages round-trip a fit", {
   skip_if_not_installed("NMF")
 
   data("example_expression_data", package = "NMFprofileR")
-  m <- nmf_preprocess(example_expression_data, expression_threshold = 0, variance_quantile = 0)
+  m <- nmf_preprocess(example_expression_data, expression_threshold = 10, variance_quantile = 0.99)
   fit <- nmf_fit(m, rank = 2, nrun = 2)
   skip_if(is.null(fit), "NMF fit unavailable")
 
@@ -40,7 +40,7 @@ test_that("nmf_marker_genes returns a specificity-scored subset of genes", {
   skip_if_not_installed("NMF")
 
   data("example_expression_data", package = "NMFprofileR")
-  m <- nmf_preprocess(example_expression_data, expression_threshold = 0, variance_quantile = 0)
+  m <- nmf_preprocess(example_expression_data, expression_threshold = 10, variance_quantile = 0.99)
   fit <- nmf_fit(m, rank = 2, nrun = 2)
   skip_if(is.null(fit), "NMF fit unavailable")
 

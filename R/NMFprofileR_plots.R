@@ -101,19 +101,21 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
   # Step 1: filter out NULL elements
   valid_gost_results <- gost_objects_list[!sapply(gost_objects_list, is.null)]
 
-  # Step 2: ensure deterministic names for the list elements
-  orig_names <- names(valid_gost_results)
-
-  # Create fallback names if necessary (use Factor_#_k# to be unambiguous)
-  fallback_names <- paste0("Factor_", seq_along(valid_gost_results), "_k", k)
-  if (is.null(orig_names) || any(is.na(orig_names) | orig_names == "")) {
-    names(valid_gost_results) <- fallback_names
-  } else {
-    # keep original names but replace any empty with fallback
-    new_names <- orig_names
-    empty_idx <- which(is.na(new_names) | new_names == "")
-    if (length(empty_idx) > 0) new_names[empty_idx] <- fallback_names[empty_idx]
-    names(valid_gost_results) <- new_names
+  # Step 2: ensure deterministic names for the list elements (only when there
+  # are any; note paste0() with a zero-length index still returns length 1, so
+  # the naming must be guarded against an empty list).
+  if (length(valid_gost_results) > 0) {
+    orig_names <- names(valid_gost_results)
+    fallback_names <- paste0("Factor_", seq_along(valid_gost_results), "_k", k)
+    if (is.null(orig_names) || any(is.na(orig_names) | orig_names == "")) {
+      names(valid_gost_results) <- fallback_names
+    } else {
+      # keep original names but replace any empty with fallback
+      new_names <- orig_names
+      empty_idx <- which(is.na(new_names) | new_names == "")
+      if (length(empty_idx) > 0) new_names[empty_idx] <- fallback_names[empty_idx]
+      names(valid_gost_results) <- new_names
+    }
   }
 
   # Step 3: iterate over each gost object and generate a Manhattan plot if safe

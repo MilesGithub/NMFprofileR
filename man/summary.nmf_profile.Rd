@@ -4,7 +4,7 @@
 \alias{summary.nmf_profile}
 \title{Summarize an NMFprofileR result}
 \usage{
-\method{summary}{nmf_profile}(object, ...)
+summary.nmf_profile(object, ...)
 }
 \arguments{
 \item{object}{An `nmf_profile` object from [NMFprofileR()].}

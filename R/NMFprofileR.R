@@ -7,14 +7,15 @@
 #' visualizations and summary reports.
 #'
 #' @section Reproducibility:
-#' For a fixed `nmf_seed` the NMF factorization is deterministic and yields
-#' identical basis and coefficient matrices whether NMF runs sequentially or
-#' across a parallel backend, within a fixed computational environment. Exact
-#' numerical reproducibility across machines can still be affected by the BLAS
-#' implementation and threading. Every run also writes a manifest and session
-#' information (surfaced in the `provenance` element of the return value) so a
-#' result can be traced to the parameters and g:Profiler database snapshot that
-#' produced it.
+#' NMF is run sequentially (not across a parallel backend), which is both what
+#' keeps results reproducible for a fixed `nmf_seed` and what avoids a failure
+#' mode of NMF's parallel execution when called from within a package. For a
+#' fixed `nmf_seed` the factorization is therefore deterministic within a fixed
+#' computational environment; exact numerical reproducibility across machines
+#' can still be affected by the BLAS implementation and threading. Every run
+#' also writes a manifest and session information (surfaced in the `provenance`
+#' element of the return value) so a result can be traced to the parameters and
+#' g:Profiler database snapshot that produced it.
 #'
 #' @param expression_data A data frame or matrix of normalized, non-negative
 #'   gene expression values. Rows should represent genes (with gene symbols as
@@ -187,28 +188,22 @@ NMFprofileR <- function(
            ", ranks=", paste(range(nmf_rank), collapse = "-"), ").")
   log_line("Preprocessed matrix: ", nrow(expr_matrix), " genes x ", ncol(expr_matrix), " samples.")
 
-  # --- NMF Rank Estimation Survey (safe parallel handling) ---
+  # --- NMF Rank Estimation Survey ---
+  # Sequential execution (parallel = 0) on all platforms: NMF's parallel workers
+  # cannot see the NMF namespace when it is called from another package, and it
+  # is also required for reproducibility. See nmf_fit().
   cli::cli_h2("Step 2: Performing NMF Rank Estimation Survey")
-  is_windows <- tolower(.Platform$OS.type) == "windows"
 
   estim_real <- tryCatch({
-    nmf_est_args <- list(
+    do.call(NMF::nmfEstimateRank, list(
       x = expr_matrix,
       range = nmf_rank,
       method = nmf_method,
       nrun = nmf_nrun,
-      seed = nmf_seed
-    )
-
-    if (is_windows) {
-      nmf_est_args$.options <- list(parallel = 0)
-      nmf_est_args$.pbackend <- NA
-    } else {
-      available_cores <- tryCatch(parallel::detectCores(logical = TRUE), error = function(e) 1)
-      nmf_est_args$.options <- list(parallel = min(nmf_nrun, max(1, available_cores)))
-    }
-
-    do.call(NMF::nmfEstimateRank, nmf_est_args)
+      seed = nmf_seed,
+      .options = list(parallel = 0),
+      .pbackend = NA
+    ))
   }, error = function(e) {
     warning("NMF rank estimation failed: ", conditionMessage(e), call. = FALSE)
     return(NULL)
@@ -366,20 +361,27 @@ NMFprofileR <- function(
         if (isTRUE(write_files)) {
           k_plots_dir <- file.path(dirs$plots, paste0("Rank_k", k))
           dir.create(k_plots_dir, showWarnings = FALSE, recursive = TRUE)
-          generate_rank_plots(
-            k = k,
-            nmf_result = nmf_result,
-            sample_assignments = sample_assignments,
-            combined_gprofiler_df = combined_gprofiler_df,
-            combined_enrichment_results_df = combined_enrichment_results_df,
-            expr_matrix = expr_matrix,
-            basis_genes = basis_genes_list,
-            k_plots_dir = k_plots_dir,
-            file_prefix = file_prefix,
-            nrun = nmf_nrun,
-            top_n = enrichment_plot_top_n,
-            gost_objects_list = gost_objects_list,
-            nmf_seed = nmf_seed
+          # Plotting is non-essential to the returned results; never let a plot
+          # failure abort the whole run.
+          tryCatch(
+            generate_rank_plots(
+              k = k,
+              nmf_result = nmf_result,
+              sample_assignments = sample_assignments,
+              combined_gprofiler_df = combined_gprofiler_df,
+              combined_enrichment_results_df = combined_enrichment_results_df,
+              expr_matrix = expr_matrix,
+              basis_genes = basis_genes_list,
+              k_plots_dir = k_plots_dir,
+              file_prefix = file_prefix,
+              nrun = nmf_nrun,
+              top_n = enrichment_plot_top_n,
+              gost_objects_list = gost_objects_list,
+              nmf_seed = nmf_seed
+            ),
+            error = function(e) {
+              cli::cli_alert_warning("generate_rank_plots() failed for k={k}: {conditionMessage(e)}")
+            }
           )
         }
       }
