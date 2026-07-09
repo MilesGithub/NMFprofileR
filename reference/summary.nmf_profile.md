@@ -5,8 +5,7 @@ Summarize an NMFprofileR result
 ## Usage
 
 ``` r
-# S3 method for class 'nmf_profile'
-summary(object, ...)
+summary.nmf_profile(object, ...)
 ```
 
 ## Arguments
