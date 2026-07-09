@@ -1,7 +1,7 @@
 Package: NMFprofileR
 Type: Package
 Title: Consensus NMF Profiling and Functional Enrichment of Transcriptomic Data
-Version: 0.3.0
+Version: 0.4.0
 Authors@R: 
     person(
       given = "Miles",
@@ -41,6 +41,7 @@ Depends:
     R (>= 3.5)
 Suggests:
     BiocManager,
+    digest,
     knitr,
     rmarkdown,
     sessioninfo,

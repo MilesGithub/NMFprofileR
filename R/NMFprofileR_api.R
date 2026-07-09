@@ -51,6 +51,18 @@ nmf_preprocess <- function(expression_data,
 #' @param method The NMF algorithm (e.g. `"brunet"`).
 #' @param nrun The number of consensus runs.
 #' @param seed An integer seed for reproducibility.
+#' @param nmf_parallel Logical; if `FALSE` (the default) the `nrun` consensus
+#'   runs are executed sequentially. If `TRUE` they are spread across a local
+#'   PSOCK cluster. The parallel path is opt-in because NMF's default parallel
+#'   backend fails when NMF is invoked from inside another package (its workers
+#'   cannot see the NMF namespace); here the cluster is configured to load NMF on
+#'   each worker, which both fixes that and, because NMF pre-generates the RNG
+#'   stream for every run, yields results identical to the sequential path for a
+#'   fixed `seed`. Falls back to sequential (with a warning) if the cluster
+#'   cannot be created.
+#' @param n_cores Number of worker processes to use when `nmf_parallel = TRUE`.
+#'   `NULL` (the default) uses one fewer than the number of detected cores,
+#'   capped at `nrun`.
 #'
 #' @return An `NMFfit` object, or `NULL` if the fit fails.
 #' @seealso [nmf_preprocess()], [nmf_basis_genes()], [nmf_sample_assignments()]
@@ -62,22 +74,63 @@ nmf_preprocess <- function(expression_data,
 #'                     variance_quantile = 0)
 #' fit <- nmf_fit(m, rank = 3, nrun = 10)
 #' }
-nmf_fit <- function(expr_matrix, rank, method = "brunet", nrun = 20, seed = 123456) {
-  # Run sequentially (parallel = 0, no parallel backend). NMF's parallel
-  # execution requires the NMF package to be attached in the worker processes,
-  # which is not the case when NMF is called from another package's namespace
-  # -- it fails there with "none of the packages are loaded". Sequential
-  # execution is also what makes results reproducible for a fixed seed.
-  tryCatch(
+nmf_fit <- function(expr_matrix, rank, method = "brunet", nrun = 20, seed = 123456,
+                    nmf_parallel = FALSE, n_cores = NULL) {
+  # Sequential fit: parallel = 0, no backend. This is the safe default -- NMF's
+  # parallel execution otherwise requires the NMF package to be attached in the
+  # worker processes, which is not the case when NMF is called from another
+  # package's namespace (it fails there with "none of the packages are loaded").
+  run_sequential <- function() {
     NMF::nmf(
       x = expr_matrix, rank = rank, method = method, nrun = nrun, seed = seed,
       .options = list(parallel = 0), .pbackend = NA
-    ),
-    error = function(e) {
-      warning(sprintf("NMF fit failed for rank %s: %s", rank, conditionMessage(e)), call. = FALSE)
-      NULL
+    )
+  }
+
+  # Parallel fit: NMF runs the consensus runs across its own local cluster when
+  # given `.options = list(parallel = n)`. It selects the packages to load on
+  # the workers from the ATTACHED search path, so when NMFprofileR calls this
+  # from its own namespace (NMF loaded but not attached) NMF must be attached for
+  # the duration of the fit -- otherwise the workers fail with "none of the
+  # packages are loaded". We attach it via attachNamespace() (not library/require
+  # so it is valid in package code), only if needed, and restore the search path
+  # afterwards. NMF seeds each run deterministically (via rngtools), so for a
+  # fixed seed the parallel result is identical to the sequential path.
+  run_parallel <- function() {
+    n <- if (is.null(n_cores)) max(1L, parallel::detectCores() - 1L) else as.integer(n_cores)
+    n <- min(n, nrun)
+    if (is.na(n) || n < 2L) return(run_sequential())
+
+    if (!"package:NMF" %in% search()) {
+      tryCatch({
+        suppressPackageStartupMessages(attachNamespace("NMF"))
+        on.exit(try(detach("package:NMF", character.only = TRUE), silent = TRUE), add = TRUE)
+      }, error = function(e) NULL)
     }
-  )
+
+    NMF::nmf(
+      x = expr_matrix, rank = rank, method = method, nrun = nrun, seed = seed,
+      .options = list(parallel = n)
+    )
+  }
+
+  tryCatch({
+    if (isTRUE(nmf_parallel) && nrun > 1L) {
+      tryCatch(
+        run_parallel(),
+        error = function(e) {
+          warning(sprintf("Parallel NMF failed (%s); falling back to sequential.",
+                          conditionMessage(e)), call. = FALSE)
+          run_sequential()
+        }
+      )
+    } else {
+      run_sequential()
+    }
+  }, error = function(e) {
+    warning(sprintf("NMF fit failed for rank %s: %s", rank, conditionMessage(e)), call. = FALSE)
+    NULL
+  })
 }
 
 #' Assign genes to their dominant NMF factor
@@ -201,6 +254,11 @@ nmf_sample_assignments <- function(fit, verbose = FALSE) {
 #' @param background_genes A character vector of background gene symbols.
 #' @param organism,sources,correction,cutoff g:Profiler query settings; see
 #'   [NMFprofileR()] for details.
+#' @param max_query_size Integer; gene sets larger than this are skipped rather
+#'   than sent to g:Profiler (default 10000).
+#' @param enrichment_cache Optional path to a directory used to cache g:Profiler
+#'   results by query hash; `NULL` (the default) disables caching. See
+#'   [NMFprofileR()].
 #'
 #' @return A list with two elements: `per_factor` (a list of `gost` result
 #'   objects, one per factor, `NULL` where there were no results) and `combined`
@@ -219,16 +277,20 @@ nmf_enrichment <- function(basis_genes_list,
                            organism = "hsapiens",
                            sources = c("GO:BP", "GO:CC", "GO:MF", "REAC", "TF"),
                            correction = "g_SCS",
-                           cutoff = 0.05) {
+                           cutoff = 0.05,
+                           max_query_size = 10000,
+                           enrichment_cache = NULL) {
   per_factor <- perform_enrichment(
     basis_genes_list = basis_genes_list, organism = organism, cutoff = cutoff,
     correction = correction, background_genes = background_genes, sources = sources,
-    output_dir = NULL, k = NA, write_files = FALSE
+    output_dir = NULL, k = NA, write_files = FALSE,
+    max_query_size = max_query_size, enrichment_cache = enrichment_cache
   )
   combined <- perform_combined_enrichment(
     basis_genes_list = basis_genes_list, organism = organism, cutoff = cutoff,
     correction = correction, background_genes = background_genes, sources = sources,
-    output_dir = NULL, k = NA, write_files = FALSE
+    output_dir = NULL, k = NA, write_files = FALSE,
+    max_query_size = max_query_size, enrichment_cache = enrichment_cache
   )
   list(per_factor = per_factor, combined = combined)
 }
@@ -270,6 +332,165 @@ nmf_rank_diagnostics <- function(x, metrics = c("cophenetic", "dispersion", "sil
     tibble::tibble(rank = as.numeric(ranks), metric = m, value = as.numeric(df[[hit[1]]]))
   })
   dplyr::bind_rows(parts)
+}
+
+#' Run NMFprofileR over many cohorts and consolidate the results
+#'
+#' A batch driver that applies [NMFprofileR()] to each of several expression
+#' matrices ("cohorts"), writing each cohort's outputs to its own subdirectory of
+#' `output_dir` and returning a single consolidated per-factor summary across all
+#' cohorts. It is resilient (one cohort failing does not abort the batch),
+#' resumable (already-completed cohorts can be skipped), and tags every row with
+#' the cohort's `run_id` so results can be pooled and traced.
+#'
+#' @param cohorts A named list of expression matrices or data frames (one per
+#'   cohort), in the form accepted by [NMFprofileR()]. The names are used both as
+#'   the `run_id` and as the output subdirectory for each cohort.
+#' @param output_dir A directory under which each cohort's `<name>_Results` tree
+#'   is written.
+#' @param ... Further arguments passed to [NMFprofileR()] (e.g. `nmf_rank`,
+#'   `nmf_nrun`, `gprofiler_sources`, `nmf_parallel`, `enrichment_cache`). Do not
+#'   pass `expression_data`, `output_prefix`, or `run_id`; the driver sets those
+#'   per cohort.
+#' @param skip_existing Logical. If `TRUE` (the default), a cohort whose results
+#'   directory already exists is not re-run; its summary is loaded from disk and
+#'   still included in the consolidated output.
+#' @param on_error One of `"continue"` (the default; log the failing cohort and
+#'   carry on) or `"stop"` (abort the whole batch on the first cohort error).
+#' @param write_batch_summary Logical. If `TRUE` (the default) the consolidated
+#'   summary is also written to `output_dir/Batch_Consolidated_Summary.tsv`.
+#'
+#' @return Invisibly, a list with:
+#'   \describe{
+#'     \item{`consolidated`}{A data frame binding every cohort's
+#'       `consolidated_summary_df` (each tagged with its `Run_ID`).}
+#'     \item{`failures`}{A data frame (`Cohort`, `Reason`) of cohorts that errored.}
+#'     \item{`skipped`}{A character vector of cohorts skipped because their
+#'       results already existed.}
+#'   }
+#' @seealso [NMFprofileR()]
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' data("example_expression_data")
+#' # Split the samples into two illustrative cohorts.
+#' half <- ncol(example_expression_data) %/% 2
+#' cohorts <- list(
+#'   cohort_A = example_expression_data[, seq_len(half)],
+#'   cohort_B = example_expression_data[, (half + 1):ncol(example_expression_data)]
+#' )
+#' batch <- run_nmf_batch(cohorts, output_dir = "batch_out", nmf_rank = 2:3, nmf_nrun = 10)
+#' batch$consolidated
+#' }
+run_nmf_batch <- function(cohorts,
+                          output_dir,
+                          ...,
+                          skip_existing = TRUE,
+                          on_error = c("continue", "stop"),
+                          write_batch_summary = TRUE) {
+  on_error <- match.arg(on_error)
+
+  if (!is.list(cohorts) || length(cohorts) == 0) {
+    stop("`cohorts` must be a non-empty named list of expression matrices/data frames.",
+         call. = FALSE)
+  }
+  nms <- names(cohorts)
+  if (is.null(nms) || any(is.na(nms)) || any(!nzchar(nms)) || anyDuplicated(nms)) {
+    stop("`cohorts` must have unique, non-empty names (used as run ids and output dirs).",
+         call. = FALSE)
+  }
+  dots <- list(...)
+  reserved <- intersect(names(dots), c("expression_data", "output_prefix", "run_id"))
+  if (length(reserved) > 0) {
+    stop("Do not pass ", paste(sprintf("`%s`", reserved), collapse = ", "),
+         " to run_nmf_batch(); the driver sets these per cohort.", call. = FALSE)
+  }
+
+  dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+  # Load a completed cohort's consolidated summary from disk (bundle preferred).
+  load_cohort_summary <- function(results_dir, run_id) {
+    bundle <- list.files(results_dir, pattern = "_nmf_profile\\.rds$", full.names = TRUE)
+    if (length(bundle) >= 1) {
+      prof <- tryCatch(readRDS(bundle[[1]]), error = function(e) NULL)
+      if (!is.null(prof) && !is.null(prof$consolidated_summary_df)) {
+        return(prof$consolidated_summary_df)
+      }
+    }
+    csv <- file.path(results_dir, "Summaries", "Consolidated_Summary.tsv")
+    if (file.exists(csv)) {
+      df <- tryCatch(readr::read_tsv(csv, show_col_types = FALSE), error = function(e) NULL)
+      if (!is.null(df)) {
+        if (!"Run_ID" %in% names(df)) df <- dplyr::mutate(df, Run_ID = run_id, .before = 1)
+        return(df)
+      }
+    }
+    NULL
+  }
+
+  cli::cli_h1("Running NMF batch over {length(cohorts)} cohort(s)")
+
+  summaries <- list()
+  skipped <- character(0)
+  failed_cohorts <- character(0)
+  failure_reasons <- character(0)
+
+  for (i in seq_along(cohorts)) {
+    name <- nms[i]
+    safe_name <- gsub("[^A-Za-z0-9._-]+", "_", name)
+    output_prefix <- file.path(output_dir, safe_name)
+    results_dir <- paste0(output_prefix, "_Results")
+
+    cli::cli_rule(left = "Cohort {i}/{length(cohorts)}: {name}")
+
+    if (isTRUE(skip_existing) && dir.exists(results_dir)) {
+      cli::cli_alert_info("Skipping {name}: results already exist at {.path {results_dir}}.")
+      loaded <- load_cohort_summary(results_dir, name)
+      if (!is.null(loaded)) summaries[[name]] <- loaded
+      skipped <- c(skipped, name)
+      next
+    }
+
+    res <- tryCatch(
+      do.call(NMFprofileR, c(
+        list(expression_data = cohorts[[name]], output_prefix = output_prefix, run_id = name),
+        dots
+      )),
+      error = function(e) e
+    )
+
+    if (inherits(res, "error")) {
+      msg <- conditionMessage(res)
+      if (identical(on_error, "stop")) {
+        stop(sprintf("Cohort '%s' failed: %s", name, msg), call. = FALSE)
+      }
+      cli::cli_alert_danger("Cohort {name} failed: {msg}")
+      failed_cohorts <- c(failed_cohorts, name)
+      failure_reasons <- c(failure_reasons, msg)
+      next
+    }
+
+    summaries[[name]] <- res$consolidated_summary_df
+  }
+
+  consolidated <- if (length(summaries) > 0) dplyr::bind_rows(summaries) else tibble::tibble()
+  failures <- data.frame(Cohort = failed_cohorts, Reason = failure_reasons,
+                         stringsAsFactors = FALSE)
+
+  if (isTRUE(write_batch_summary) && nrow(consolidated) > 0) {
+    out_path <- file.path(output_dir, "Batch_Consolidated_Summary.tsv")
+    tryCatch(
+      readr::write_tsv(consolidated, out_path),
+      error = function(e) cli::cli_alert_warning("Failed to write batch summary: {conditionMessage(e)}")
+    )
+  }
+
+  cli::cli_alert_success(
+    "Batch complete: {length(summaries)} cohort(s) summarized ({length(skipped)} skipped, {nrow(failures)} failed)."
+  )
+
+  invisible(list(consolidated = consolidated, failures = failures, skipped = skipped))
 }
 
 #' Print an NMFprofileR result

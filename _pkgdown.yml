@@ -5,9 +5,10 @@ template:
 
 reference:
 - title: Pipeline
-  desc: The end-to-end orchestrator.
+  desc: The end-to-end orchestrator and batch driver.
   contents:
   - NMFprofileR
+  - run_nmf_batch
 - title: Composable stages
   desc: Individual, in-memory pipeline steps.
   contents:

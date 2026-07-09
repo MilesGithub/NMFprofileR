@@ -24,19 +24,18 @@ test_that("NMF gives identical results run-to-run for a fixed seed", {
   expect_equal(NMF::consensus(a), NMF::consensus(b))
 })
 
-test_that("a parallel backend does not change the seeded result", {
+test_that("the parallel backend does not change the seeded result", {
   skip_on_cran()
   skip_if_not_installed("NMF")
+  if (parallel::detectCores() < 2L) skip("needs >= 2 cores")
 
   m <- small_matrix()
-  seq_fit <- NMF::nmf(m, rank = 2, method = "brunet", nrun = 2, seed = 123456,
-                      .options = list(parallel = 0))
-  par_fit <- tryCatch(
-    NMF::nmf(m, rank = 2, method = "brunet", nrun = 2, seed = 123456,
-             .options = list(parallel = 2)),
-    error = function(e) skip(paste("parallel backend unavailable:", conditionMessage(e)))
-  )
+  # Use the package's own parallel path (nmf_fit), which loads NMF on the
+  # workers so it works from within the package namespace.
+  seq_fit <- nmf_fit(m, rank = 2, nrun = 2, seed = 123456, nmf_parallel = FALSE)
+  par_fit <- nmf_fit(m, rank = 2, nrun = 2, seed = 123456, nmf_parallel = TRUE, n_cores = 2)
 
+  expect_false(is.null(par_fit))
   expect_equal(NMF::basis(seq_fit), NMF::basis(par_fit))
   expect_equal(NMF::coef(seq_fit), NMF::coef(par_fit))
 })

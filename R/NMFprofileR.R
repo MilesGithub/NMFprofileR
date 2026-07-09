@@ -96,6 +96,22 @@
 #'   as a leading `Run_ID` column in `consolidated_summary_df` (and the on-disk
 #'   `Consolidated_Summary.tsv`) and recorded in the run manifest, so results
 #'   from many runs can be pooled and traced back to their source.
+#' @param nmf_parallel A logical value. If `FALSE` (the default) the per-rank
+#'   consensus runs are fitted sequentially. If `TRUE` they are spread across a
+#'   local cluster; see [nmf_fit()] for details. For a fixed `nmf_seed` the
+#'   parallel path yields the same factorization as the sequential one. The
+#'   rank-estimation survey always runs sequentially.
+#' @param nmf_cores Number of worker processes to use when
+#'   `nmf_parallel = TRUE`. `NULL` (the default) uses one fewer than the number
+#'   of detected cores.
+#' @param max_query_size An integer. Factor gene sets larger than this are
+#'   skipped (with a warning) rather than sent to g:Profiler, guarding against
+#'   pathological oversized queries. Defaults to 10000.
+#' @param enrichment_cache An optional path to a directory used to cache
+#'   g:Profiler results. When set, each query is keyed by a hash of its genes,
+#'   background, sources, and settings and read from / written to this directory,
+#'   so re-runs (e.g. across a batch) skip the network. `NULL` (the default)
+#'   disables caching.
 #'
 #' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
 #' @importFrom cluster silhouette
@@ -156,7 +172,11 @@ NMFprofileR <- function(
     custom_theme = NULL,
     factor_palette = NULL,
     umap_n_neighbors = 15,
-    run_id = NULL
+    run_id = NULL,
+    nmf_parallel = FALSE,
+    nmf_cores = NULL,
+    max_query_size = 10000,
+    enrichment_cache = NULL
 ) {
   on_duplicate_genes <- match.arg(on_duplicate_genes)
   variance_scale <- match.arg(variance_scale)
@@ -275,7 +295,7 @@ NMFprofileR <- function(
     last_fit_warning <- NA_character_
     nmf_result <- withCallingHandlers(
       run_nmf_for_rank(k, expr_matrix, nmf_method, nmf_nrun, nmf_seed, dirs$nmf_core, file_prefix,
-                       write_files = write_files),
+                       write_files = write_files, nmf_parallel = nmf_parallel, n_cores = nmf_cores),
       warning = function(w) last_fit_warning <<- conditionMessage(w)
     )
 
@@ -330,7 +350,8 @@ NMFprofileR <- function(
             organism = gprofiler_organism, cutoff = gprofiler_cutoff,
             correction = gprofiler_correction, background_genes = final_nmf_genes,
             sources = gprofiler_sources, output_dir = dirs$enrichment, k = k,
-            write_files = write_files, label = "Marker_Enrichment"
+            write_files = write_files, label = "Marker_Enrichment",
+            max_query_size = max_query_size, enrichment_cache = enrichment_cache
           )
           marker_valid <- marker_gost[!vapply(marker_gost, is.null, logical(1))]
           marker_enrichment_by_rank[[as.character(k)]] <- dplyr::bind_rows(
@@ -348,7 +369,9 @@ NMFprofileR <- function(
           sources = gprofiler_sources,
           output_dir = dirs$enrichment,
           k = k,
-          write_files = write_files
+          write_files = write_files,
+          max_query_size = max_query_size,
+          enrichment_cache = enrichment_cache
         )
 
         # filter NULLs before binding
@@ -370,7 +393,9 @@ NMFprofileR <- function(
           sources = gprofiler_sources,
           output_dir = dirs$enrichment,
           k = k,
-          write_files = write_files
+          write_files = write_files,
+          max_query_size = max_query_size,
+          enrichment_cache = enrichment_cache
         )
         if (is.null(combined_enrichment_results_df)) combined_enrichment_results_df <- data.frame()
         enrichment_per_factor_by_rank[[as.character(k)]] <- combined_gprofiler_df
