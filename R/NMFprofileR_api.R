@@ -334,6 +334,294 @@ nmf_rank_diagnostics <- function(x, metrics = c("cophenetic", "dispersion", "sil
   dplyr::bind_rows(parts)
 }
 
+#' Extract a basis matrix (genes x factors) from a fit or matrix
+#'
+#' @param x An `NMFfit` object or a numeric basis matrix.
+#' @return A numeric matrix with gene rownames and factor colnames.
+#' @noRd
+as_basis_matrix <- function(x) {
+  # Accept a plain matrix, or any NMF fit object (whose concrete S4 class varies,
+  # e.g. NMFfitX1); NMF::basis() extracts the basis matrix from the latter.
+  W <- if (is.matrix(x)) x else tryCatch(NMF::basis(x), error = function(e) as.matrix(x))
+  if (is.null(colnames(W))) colnames(W) <- paste0("Factor_", seq_len(ncol(W)))
+  W
+}
+
+#' Align NMF factors across runs by basis-loading correlation
+#'
+#' Matches the factors of several NMF runs to a common reference so that "the
+#' same" factor can be tracked across runs (e.g. across cohorts, ranks, or
+#' resamples). The first element of `x` is the reference; every other run's
+#' factors are correlated against the reference factors on their shared genes and
+#' matched one-to-one.
+#'
+#' @param x A named list (length >= 2) of `NMFfit` objects and/or basis matrices
+#'   (genes in rows with gene-symbol rownames, factors in columns). The names
+#'   identify the runs; the first element is the reference.
+#' @param method How to pick the one-to-one matches: `"greedy"` (the default)
+#'   repeatedly takes the highest remaining correlation; `"hungarian"` finds the
+#'   globally optimal assignment via `clue::solve_LSAP()` (used only if the
+#'   `clue` package is installed, otherwise it falls back to greedy).
+#' @param min_cor Minimum absolute correlation for a pair to be reported as a
+#'   match (default 0.5).
+#' @param cor_method Correlation method, `"pearson"` (default) or `"spearman"`.
+#'
+#' @return A list with:
+#'   \describe{
+#'     \item{`reference`}{The name of the reference run.}
+#'     \item{`correlations`}{A tibble (`run`, `factor`, `ref_factor`,
+#'       `correlation`) of every run factor against every reference factor.}
+#'     \item{`matches`}{A tibble (`run`, `factor`, `ref_factor`, `correlation`)
+#'       of the selected one-to-one matches with `abs(correlation) >= min_cor`.}
+#'   }
+#' @seealso [nmf_fit()]
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' fit_a <- nmf_fit(m, rank = 3)
+#' fit_b <- nmf_fit(m, rank = 3, seed = 99)
+#' aln <- align_factors(list(run_a = fit_a, run_b = fit_b))
+#' aln$matches
+#' }
+align_factors <- function(x,
+                          method = c("greedy", "hungarian"),
+                          min_cor = 0.5,
+                          cor_method = c("pearson", "spearman")) {
+  method <- match.arg(method)
+  cor_method <- match.arg(cor_method)
+
+  if (!is.list(x) || length(x) < 2) {
+    stop("`x` must be a list of at least two runs (NMFfit objects or basis matrices).",
+         call. = FALSE)
+  }
+  run_names <- names(x)
+  if (is.null(run_names) || any(!nzchar(run_names)) || anyDuplicated(run_names)) {
+    stop("`x` must have unique, non-empty names identifying the runs.", call. = FALSE)
+  }
+
+  bases <- lapply(x, as_basis_matrix)
+  ref_name <- run_names[1]
+  ref <- bases[[1]]
+
+  greedy_match <- function(cormat) {
+    # cormat: query factors (rows) x reference factors (cols)
+    pairs <- list()
+    remaining_rows <- rownames(cormat)
+    remaining_cols <- colnames(cormat)
+    while (length(remaining_rows) > 0 && length(remaining_cols) > 0) {
+      sub <- cormat[remaining_rows, remaining_cols, drop = FALSE]
+      idx <- which.max(abs(sub))
+      rc <- arrayInd(idx, dim(sub))
+      r <- remaining_rows[rc[1]]; cc <- remaining_cols[rc[2]]
+      pairs[[length(pairs) + 1]] <- data.frame(
+        factor = r, ref_factor = cc, correlation = sub[rc[1], rc[2]],
+        stringsAsFactors = FALSE
+      )
+      remaining_rows <- setdiff(remaining_rows, r)
+      remaining_cols <- setdiff(remaining_cols, cc)
+    }
+    do.call(rbind, pairs)
+  }
+
+  hungarian_match <- function(cormat) {
+    # Maximize total abs correlation -> minimize its negative. solve_LSAP needs a
+    # square-ish nonnegative cost; pad to square with a high cost.
+    cost <- max(abs(cormat)) - abs(cormat)
+    nr <- nrow(cost); nc <- ncol(cost)
+    n <- max(nr, nc)
+    padded <- matrix(max(cost) + 1, n, n)
+    padded[seq_len(nr), seq_len(nc)] <- cost
+    assign <- clue::solve_LSAP(padded)
+    out <- lapply(seq_len(nr), function(i) {
+      j <- assign[i]
+      if (j > nc) return(NULL)
+      data.frame(factor = rownames(cormat)[i], ref_factor = colnames(cormat)[j],
+                 correlation = cormat[i, j], stringsAsFactors = FALSE)
+    })
+    do.call(rbind, out)
+  }
+
+  use_hungarian <- identical(method, "hungarian") && requireNamespace("clue", quietly = TRUE)
+
+  cor_long <- list()
+  match_long <- list()
+
+  for (i in 2:length(bases)) {
+    run <- run_names[i]
+    q <- bases[[i]]
+    shared <- intersect(rownames(ref), rownames(q))
+    if (length(shared) < 2) {
+      cli::cli_alert_warning("Run {run}: fewer than 2 shared genes with the reference; skipping.")
+      next
+    }
+    cormat <- stats::cor(q[shared, , drop = FALSE], ref[shared, , drop = FALSE],
+                         method = cor_method)
+    # long correlations
+    cl <- expand.grid(factor = rownames(cormat), ref_factor = colnames(cormat),
+                      stringsAsFactors = FALSE)
+    cl$run <- run
+    cl$correlation <- mapply(function(a, b) cormat[a, b], cl$factor, cl$ref_factor)
+    cor_long[[run]] <- cl[, c("run", "factor", "ref_factor", "correlation")]
+
+    m <- if (use_hungarian) hungarian_match(cormat) else greedy_match(cormat)
+    if (!is.null(m) && nrow(m) > 0) {
+      m <- m[abs(m$correlation) >= min_cor, , drop = FALSE]
+      if (nrow(m) > 0) {
+        m$run <- run
+        match_long[[run]] <- m[, c("run", "factor", "ref_factor", "correlation")]
+      }
+    }
+  }
+
+  empty <- tibble::tibble(run = character(), factor = character(),
+                          ref_factor = character(), correlation = numeric())
+  list(
+    reference = ref_name,
+    correlations = if (length(cor_long)) tibble::as_tibble(do.call(rbind, cor_long)) else empty,
+    matches = if (length(match_long)) tibble::as_tibble(do.call(rbind, match_long)) else empty
+  )
+}
+
+#' Project new samples onto learned NMF factors
+#'
+#' Scores new samples against an existing factorization by solving for their
+#' coefficient matrix H with the basis matrix W held fixed
+#' (`min ||V - W H||` s.t. `H >= 0`), using non-negative multiplicative updates.
+#' Genes are aligned on the shared symbols between W and the new data.
+#'
+#' @param fit An `NMFfit` object (or a numeric basis matrix W, genes x factors)
+#'   defining the learned factors.
+#' @param newdata A numeric matrix or data frame of new samples (genes in rows
+#'   with gene-symbol rownames, samples in columns).
+#' @param n_iter Maximum number of multiplicative-update iterations (default 200).
+#' @param tol Convergence tolerance on the maximum change in H (default 1e-6).
+#'
+#' @return A data frame with one row per new sample: `SampleID`, one coefficient
+#'   column per factor (`Factor_1 ... Factor_k`), and `Dominant_Factor`.
+#' @seealso [nmf_fit()], [nmf_sample_assignments()]
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' fit <- nmf_fit(m, rank = 3)
+#' nmf_project(fit, newdata = m_new)
+#' }
+nmf_project <- function(fit, newdata, n_iter = 200L, tol = 1e-6) {
+  W <- as_basis_matrix(fit)
+  V <- as.matrix(newdata)
+  if (is.null(rownames(V))) stop("`newdata` must have gene symbols as rownames.", call. = FALSE)
+
+  shared <- intersect(rownames(W), rownames(V))
+  if (length(shared) < 2) {
+    stop("Fewer than 2 shared genes between the fit and `newdata`.", call. = FALSE)
+  }
+  n_missing <- nrow(W) - length(shared)
+  if (n_missing > 0) {
+    cli::cli_alert_warning("{n_missing} of {nrow(W)} basis genes are absent from `newdata`; projecting on {length(shared)} shared genes.")
+  }
+
+  Ws <- W[shared, , drop = FALSE]
+  Vs <- V[shared, , drop = FALSE]
+  Vs[!is.finite(Vs)] <- 0
+  Vs[Vs < 0] <- 0
+
+  k <- ncol(Ws)
+  n <- ncol(Vs)
+  # Deterministic non-negative initialisation (no RNG) so projection is reproducible.
+  H <- matrix(1, nrow = k, ncol = n)
+  WtW <- crossprod(Ws)          # k x k
+  WtV <- crossprod(Ws, Vs)      # k x n
+  eps <- .Machine$double.eps
+  for (i in seq_len(n_iter)) {
+    H_new <- H * (WtV / (WtW %*% H + eps))
+    if (max(abs(H_new - H)) < tol) { H <- H_new; break }
+    H <- H_new
+  }
+
+  factor_names <- if (is.null(colnames(Ws))) paste0("Factor_", seq_len(k)) else colnames(Ws)
+  score_mat <- t(H)
+  colnames(score_mat) <- factor_names
+  sample_ids <- if (is.null(colnames(Vs))) paste0("Sample_", seq_len(n)) else colnames(Vs)
+
+  dominant <- factor_names[max.col(score_mat, ties.method = "first")]
+  scores <- as.data.frame(score_mat)
+  out <- data.frame(SampleID = sample_ids, scores, Dominant_Factor = dominant,
+                    stringsAsFactors = FALSE, check.names = FALSE)
+  rownames(out) <- NULL
+  out
+}
+
+#' Assess NMF factor stability by subsampling
+#'
+#' Quantifies how reproducible each factor is by refitting NMF on random subsets
+#' of the samples and measuring how well the resampled factors recover the
+#' reference factors (fitted on the full matrix). For each resample the basis
+#' loadings are correlated against the reference and each reference factor's best
+#' match is recorded; the per-factor stability is the mean of these best matches
+#' across resamples (1 = perfectly reproducible).
+#'
+#' @param expr_matrix A preprocessed, non-negative numeric matrix (genes x
+#'   samples), as from [nmf_preprocess()].
+#' @param rank The factorization rank (integer).
+#' @param method,nrun,seed Passed to [nmf_fit()] for every fit.
+#' @param nboot Number of subsampling iterations (default 30).
+#' @param subsample_frac Fraction of samples drawn (without replacement) in each
+#'   iteration (default 0.8).
+#' @param nmf_parallel,n_cores Passed to [nmf_fit()].
+#'
+#' @return A tibble with columns `Factor` and `Stability` (mean best-match
+#'   correlation across resamples), one row per reference factor.
+#' @seealso [nmf_fit()], [nmf_rank_diagnostics()]
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' m <- nmf_preprocess(example_expression_data, expression_threshold = 10,
+#'                     variance_quantile = 0.9)
+#' nmf_stability(m, rank = 3, nrun = 10, nboot = 20)
+#' }
+nmf_stability <- function(expr_matrix, rank, method = "brunet", nrun = 10, seed = 123456,
+                          nboot = 30, subsample_frac = 0.8,
+                          nmf_parallel = FALSE, n_cores = NULL) {
+  factor_names <- paste0("Factor_", seq_len(rank))
+  na_result <- tibble::tibble(Factor = factor_names, Stability = NA_real_)
+
+  ref_fit <- nmf_fit(expr_matrix, rank = rank, method = method, nrun = nrun, seed = seed,
+                     nmf_parallel = nmf_parallel, n_cores = n_cores)
+  if (is.null(ref_fit)) {
+    cli::cli_alert_warning("Reference fit failed; returning NA stability.")
+    return(na_result)
+  }
+  W_ref <- NMF::basis(ref_fit)
+
+  n_samples <- ncol(expr_matrix)
+  size <- max(rank + 1L, floor(subsample_frac * n_samples))
+  if (size >= n_samples) {
+    cli::cli_alert_warning("subsample_frac leaves no samples out; stability is uninformative.")
+  }
+
+  best_per_boot <- vector("list", nboot)
+  for (b in seq_len(nboot)) {
+    set.seed(seed + b)
+    cols <- sample.int(n_samples, size = min(size, n_samples))
+    fit_b <- nmf_fit(expr_matrix[, cols, drop = FALSE], rank = rank, method = method,
+                     nrun = nrun, seed = seed, nmf_parallel = nmf_parallel, n_cores = n_cores)
+    if (is.null(fit_b)) next
+    W_b <- NMF::basis(fit_b)
+    shared <- intersect(rownames(W_ref), rownames(W_b))
+    if (length(shared) < 2) next
+    cormat <- abs(stats::cor(W_ref[shared, , drop = FALSE], W_b[shared, , drop = FALSE]))
+    best_per_boot[[b]] <- apply(cormat, 1, max)   # best match per reference factor
+  }
+
+  best_per_boot <- best_per_boot[!vapply(best_per_boot, is.null, logical(1))]
+  if (length(best_per_boot) == 0) return(na_result)
+
+  stability <- rowMeans(do.call(cbind, best_per_boot))
+  tibble::tibble(Factor = factor_names, Stability = as.numeric(stability))
+}
+
 #' Run NMFprofileR over many cohorts and consolidate the results
 #'
 #' A batch driver that applies [NMFprofileR()] to each of several expression

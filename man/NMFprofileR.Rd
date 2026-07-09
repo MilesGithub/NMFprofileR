@@ -31,7 +31,10 @@ NMFprofileR(
   nmf_parallel = FALSE,
   nmf_cores = NULL,
   max_query_size = 10000,
-  enrichment_cache = NULL
+  enrichment_cache = NULL,
+  basis_gene_method = c("argmax", "specificity"),
+  stability_nboot = 0,
+  stability_frac = 0.8
 )
 }
 \arguments{
@@ -156,6 +159,22 @@ g:Profiler results. When set, each query is keyed by a hash of its genes,
 background, sources, and settings and read from / written to this directory,
 so re-runs (e.g. across a batch) skip the network. `NULL` (the default)
 disables caching.}
+
+\item{basis_gene_method}{How genes are assigned to factors for the primary
+basis-gene output (the exported `Basis_Genes_*` tables, the enrichment
+input, and the heatmap grouping). `"argmax"` (the default) assigns every
+gene to its dominant factor; `"specificity"` instead uses the sharper
+Kim-Park specificity markers (`NMF::extractFeatures`), leaving many genes
+unassigned. Changing this changes the primary scientific output.}
+
+\item{stability_nboot}{Integer. If greater than 0, factor stability is
+assessed for each rank by refitting on `stability_nboot` random subsamples
+of the samples (see [nmf_stability()]); a `Stability` column is added to
+`consolidated_summary_df` and the per-rank tibbles are returned in
+`$stability`. Defaults to 0 (off), as it multiplies the fitting cost.}
+
+\item{stability_frac}{Fraction of samples drawn in each stability subsample
+(default 0.8); only used when `stability_nboot > 0`.}
 }
 \value{
 Invisibly, an S3 object of class `nmf_profile` (a list underneath, so
@@ -180,6 +199,8 @@ Invisibly, an S3 object of class `nmf_profile` (a list underneath, so
       the run, or `NULL` when `write_files = FALSE`.}
     \item{`failures`}{A data frame (columns `Rank`, `Reason`) of ranks whose
       NMF fit failed and were skipped; empty when every rank succeeded.}
+    \item{`stability`}{A named list (by rank) of per-factor stability tibbles,
+      present only when `stability_nboot > 0` (otherwise an empty list).}
     \item{`runtime`}{A `difftime` giving the total pipeline runtime.}
     \item{`provenance`}{A named list recording the captured g:Profiler
       database version (`gprofiler_version`), the `run_parameters` used, and

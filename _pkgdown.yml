@@ -19,6 +19,12 @@ reference:
   - nmf_sample_assignments
   - nmf_enrichment
   - nmf_rank_diagnostics
+- title: Cross-run and validation
+  desc: Compare, project, and assess the stability of factors.
+  contents:
+  - align_factors
+  - nmf_project
+  - nmf_stability
 - title: Result object
   desc: The nmf_profile S3 object.
   contents:
