@@ -14,7 +14,9 @@ Description: Provides a reproducible pipeline for nonnegative matrix factorizati
     of transcriptomic data across multiple ranks, including consensus clustering, 
     visualization, and downstream functional interpretation. Identified factor-specific 
     gene sets are analyzed with Gene Ontology (GO) and pathway enrichment (via gprofiler2) 
-    to reveal underlying biological processes.
+    to reveal underlying biological processes. Additional tools support batch
+    analysis across cohorts, alignment of factors across runs, projection of new
+    samples onto a learned factorization, and factor stability assessment.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
