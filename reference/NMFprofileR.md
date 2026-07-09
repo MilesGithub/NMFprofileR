@@ -32,7 +32,11 @@ NMFprofileR(
   custom_theme = NULL,
   factor_palette = NULL,
   umap_n_neighbors = 15,
-  run_id = NULL
+  run_id = NULL,
+  nmf_parallel = FALSE,
+  nmf_cores = NULL,
+  max_query_size = 10000,
+  enrichment_cache = NULL
 )
 ```
 
@@ -189,6 +193,34 @@ NMFprofileR(
   on-disk \`Consolidated_Summary.tsv\`) and recorded in the run
   manifest, so results from many runs can be pooled and traced back to
   their source.
+
+- nmf_parallel:
+
+  A logical value. If \`FALSE\` (the default) the per-rank consensus
+  runs are fitted sequentially. If \`TRUE\` they are spread across a
+  local cluster; see \[nmf_fit()\] for details. For a fixed \`nmf_seed\`
+  the parallel path yields the same factorization as the sequential one.
+  The rank-estimation survey always runs sequentially.
+
+- nmf_cores:
+
+  Number of worker processes to use when \`nmf_parallel = TRUE\`.
+  \`NULL\` (the default) uses one fewer than the number of detected
+  cores.
+
+- max_query_size:
+
+  An integer. Factor gene sets larger than this are skipped (with a
+  warning) rather than sent to g:Profiler, guarding against pathological
+  oversized queries. Defaults to 10000.
+
+- enrichment_cache:
+
+  An optional path to a directory used to cache g:Profiler results. When
+  set, each query is keyed by a hash of its genes, background, sources,
+  and settings and read from / written to this directory, so re-runs
+  (e.g. across a batch) skip the network. \`NULL\` (the default)
+  disables caching.
 
 ## Value
 

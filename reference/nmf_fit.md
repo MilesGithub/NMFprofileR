@@ -7,7 +7,15 @@ object without writing anything to disk.
 ## Usage
 
 ``` r
-nmf_fit(expr_matrix, rank, method = "brunet", nrun = 20, seed = 123456)
+nmf_fit(
+  expr_matrix,
+  rank,
+  method = "brunet",
+  nrun = 20,
+  seed = 123456,
+  nmf_parallel = FALSE,
+  n_cores = NULL
+)
 ```
 
 ## Arguments
@@ -32,6 +40,24 @@ nmf_fit(expr_matrix, rank, method = "brunet", nrun = 20, seed = 123456)
 - seed:
 
   An integer seed for reproducibility.
+
+- nmf_parallel:
+
+  Logical; if \`FALSE\` (the default) the \`nrun\` consensus runs are
+  executed sequentially. If \`TRUE\` they are spread across a local
+  PSOCK cluster. The parallel path is opt-in because NMF's default
+  parallel backend fails when NMF is invoked from inside another package
+  (its workers cannot see the NMF namespace); here the cluster is
+  configured to load NMF on each worker, which both fixes that and,
+  because NMF pre-generates the RNG stream for every run, yields results
+  identical to the sequential path for a fixed \`seed\`. Falls back to
+  sequential (with a warning) if the cluster cannot be created.
+
+- n_cores:
+
+  Number of worker processes to use when \`nmf_parallel = TRUE\`.
+  \`NULL\` (the default) uses one fewer than the number of detected
+  cores, capped at \`nrun\`.
 
 ## Value
 

@@ -1,5 +1,31 @@
 # Changelog
 
+## NMFprofileR 0.4.0
+
+### New features
+
+- [`run_nmf_batch()`](https://milesgithub.github.io/NMFprofileR/reference/run_nmf_batch.md)
+  runs
+  [`NMFprofileR()`](https://milesgithub.github.io/NMFprofileR/reference/NMFprofileR.md)
+  over a named list of cohorts, writing each to its own subdirectory and
+  returning a single consolidated per-factor summary tagged by cohort
+  `Run_ID`. It is resilient (`on_error = "continue"`), resumable
+  (`skip_existing` reloads finished cohorts from disk), and writes a
+  `Batch_Consolidated_Summary.tsv`.
+- Opt-in parallel NMF: `nmf_parallel = TRUE` (with optional `nmf_cores`)
+  spreads the consensus runs across a local cluster. The cluster loads
+  NMF on each worker, so it works when called from inside a package, and
+  for a fixed `nmf_seed` it returns the same factorization as the
+  sequential path. The default remains sequential.
+- g:Profiler hardening: an oversized-query guard (`max_query_size`),
+  automatic retry with backoff on transient network failures, and an
+  optional on-disk result cache (`enrichment_cache`) keyed by query hash
+  so re-runs and batches skip the network.
+
+### Infrastructure
+
+- New “Batch analysis across many cohorts” vignette.
+
 ## NMFprofileR 0.3.0
 
 ### Breaking changes

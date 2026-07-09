@@ -2,10 +2,12 @@
 
 ## Pipeline
 
-The end-to-end orchestrator.
+The end-to-end orchestrator and batch driver.
 
 - [`NMFprofileR()`](https://milesgithub.github.io/NMFprofileR/reference/NMFprofileR.md)
   : Perform a Full Multi-Rank NMF and Functional Enrichment Analysis
+- [`run_nmf_batch()`](https://milesgithub.github.io/NMFprofileR/reference/run_nmf_batch.md)
+  : Run NMFprofileR over many cohorts and consolidate the results
 
 ## Composable stages
 

@@ -3,6 +3,7 @@
 <url><loc>https://milesgithub.github.io/NMFprofileR/LICENSE-text.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/LICENSE.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/articles/NMFprofileR-vignette.html</loc></url>
+<url><loc>https://milesgithub.github.io/NMFprofileR/articles/batch-analysis.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/articles/index.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/authors.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/index.html</loc></url>
@@ -19,6 +20,7 @@
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/nmf_sample_assignments.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/pipe.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/print.nmf_profile.html</loc></url>
+<url><loc>https://milesgithub.github.io/NMFprofileR/reference/run_nmf_batch.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/summary.nmf_profile.html</loc></url>
 </urlset>
 

@@ -9,7 +9,7 @@ factor gene sets, in memory (nothing is written to disk)."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">NMFprofileR</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.4.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -20,7 +20,8 @@ factor gene sets, in memory (nothing is written to disk)."></head><body>
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/NMFprofileR-vignette.html">Getting started with NMFprofileR</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/batch-analysis.html">Batch analysis across many cohorts</a></li>
+    <li><a class="dropdown-item" href="../articles/NMFprofileR-vignette.html">Getting started with NMFprofileR</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -51,7 +52,9 @@ factor gene sets, in memory (nothing is written to disk).</p>
 <span>  organism <span class="op">=</span> <span class="st">"hsapiens"</span>,</span>
 <span>  sources <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"GO:BP"</span>, <span class="st">"GO:CC"</span>, <span class="st">"GO:MF"</span>, <span class="st">"REAC"</span>, <span class="st">"TF"</span><span class="op">)</span>,</span>
 <span>  correction <span class="op">=</span> <span class="st">"g_SCS"</span>,</span>
-<span>  cutoff <span class="op">=</span> <span class="fl">0.05</span></span>
+<span>  cutoff <span class="op">=</span> <span class="fl">0.05</span>,</span>
+<span>  max_query_size <span class="op">=</span> <span class="fl">10000</span>,</span>
+<span>  enrichment_cache <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -71,6 +74,17 @@ factor (e.g. from splitting [nmf_basis_genes()]).</p></dd>
 <dt id="arg-organism-sources-correction-cutoff">organism, sources, correction, cutoff<a class="anchor" aria-label="anchor" href="#arg-organism-sources-correction-cutoff"></a></dt>
 <dd><p>g:Profiler query settings; see
 [NMFprofileR()] for details.</p></dd>
+
+
+<dt id="arg-max-query-size">max_query_size<a class="anchor" aria-label="anchor" href="#arg-max-query-size"></a></dt>
+<dd><p>Integer; gene sets larger than this are skipped rather
+than sent to g:Profiler (default 10000).</p></dd>
+
+
+<dt id="arg-enrichment-cache">enrichment_cache<a class="anchor" aria-label="anchor" href="#arg-enrichment-cache"></a></dt>
+<dd><p>Optional path to a directory used to cache g:Profiler
+results by query hash; `NULL` (the default) disables caching. See
+[NMFprofileR()].</p></dd>
 
 </dl></div>
     <div class="section level2">
