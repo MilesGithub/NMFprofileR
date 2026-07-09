@@ -112,6 +112,19 @@
 #'   background, sources, and settings and read from / written to this directory,
 #'   so re-runs (e.g. across a batch) skip the network. `NULL` (the default)
 #'   disables caching.
+#' @param basis_gene_method How genes are assigned to factors for the primary
+#'   basis-gene output (the exported `Basis_Genes_*` tables, the enrichment
+#'   input, and the heatmap grouping). `"argmax"` (the default) assigns every
+#'   gene to its dominant factor; `"specificity"` instead uses the sharper
+#'   Kim-Park specificity markers (`NMF::extractFeatures`), leaving many genes
+#'   unassigned. Changing this changes the primary scientific output.
+#' @param stability_nboot Integer. If greater than 0, factor stability is
+#'   assessed for each rank by refitting on `stability_nboot` random subsamples
+#'   of the samples (see [nmf_stability()]); a `Stability` column is added to
+#'   `consolidated_summary_df` and the per-rank tibbles are returned in
+#'   `$stability`. Defaults to 0 (off), as it multiplies the fitting cost.
+#' @param stability_frac Fraction of samples drawn in each stability subsample
+#'   (default 0.8); only used when `stability_nboot > 0`.
 #'
 #' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
 #' @importFrom cluster silhouette
@@ -138,6 +151,8 @@
 #'       the run, or `NULL` when `write_files = FALSE`.}
 #'     \item{`failures`}{A data frame (columns `Rank`, `Reason`) of ranks whose
 #'       NMF fit failed and were skipped; empty when every rank succeeded.}
+#'     \item{`stability`}{A named list (by rank) of per-factor stability tibbles,
+#'       present only when `stability_nboot > 0` (otherwise an empty list).}
 #'     \item{`runtime`}{A `difftime` giving the total pipeline runtime.}
 #'     \item{`provenance`}{A named list recording the captured g:Profiler
 #'       database version (`gprofiler_version`), the `run_parameters` used, and
@@ -176,10 +191,14 @@ NMFprofileR <- function(
     nmf_parallel = FALSE,
     nmf_cores = NULL,
     max_query_size = 10000,
-    enrichment_cache = NULL
+    enrichment_cache = NULL,
+    basis_gene_method = c("argmax", "specificity"),
+    stability_nboot = 0,
+    stability_frac = 0.8
 ) {
   on_duplicate_genes <- match.arg(on_duplicate_genes)
   variance_scale <- match.arg(variance_scale)
+  basis_gene_method <- match.arg(basis_gene_method)
   # --- Helper for verbose/debug messages ---
   vmsg <- function(...) {
     if (isTRUE(verbose)) cli::cli_alert_info(...)
@@ -282,6 +301,7 @@ NMFprofileR <- function(
   enrichment_per_factor_by_rank <- list()
   enrichment_combined_by_rank <- list()
   marker_enrichment_by_rank <- list()
+  stability_by_rank <- list()     # per-rank factor stability (P11)
   failed_ranks <- integer(0)      # ranks whose NMF fit failed (P5)
   failure_reasons <- character(0)
 
@@ -319,8 +339,13 @@ NMFprofileR <- function(
         W <- NMF::basis(nmf_result)
         H <- NMF::coef(nmf_result)
 
-        # --- Assign genes to their dominant factor (composable stage) ---
-        basis_genes_df <- nmf_basis_genes(nmf_result)
+        # --- Assign genes to factors for the primary basis-gene output
+        #     (argmax by default, or Kim-Park specificity markers). ---
+        basis_genes_df <- if (identical(basis_gene_method, "specificity")) {
+          nmf_marker_genes(nmf_result)
+        } else {
+          nmf_basis_genes(nmf_result)
+        }
         basis_genes_by_rank[[as.character(k)]] <- basis_genes_df
 
         if (isTRUE(write_files)) {
@@ -329,6 +354,24 @@ NMFprofileR <- function(
             basis_genes_df,
             file.path(dirs$basis_genes, paste0("Basis_Genes_Rank_k", k, ".tsv"))
           )
+        }
+
+        # --- Factor stability by subsampling (opt-in, P11) ---
+        if (stability_nboot > 0) {
+          stab <- tryCatch(
+            nmf_stability(expr_matrix, rank = k, method = nmf_method, nrun = nmf_nrun,
+                          seed = nmf_seed, nboot = stability_nboot,
+                          subsample_frac = stability_frac,
+                          nmf_parallel = nmf_parallel, n_cores = nmf_cores),
+            error = function(e) {
+              cli::cli_alert_warning("Stability estimation failed for k={k}: {conditionMessage(e)}")
+              NULL
+            }
+          )
+          if (!is.null(stab)) {
+            stab$Rank <- k
+            stability_by_rank[[as.character(k)]] <- stab
+          }
         }
 
         # Split into list
@@ -459,6 +502,12 @@ NMFprofileR <- function(
     # --- Finalize and Global Plots ---
     cli::cli_h2("Step 4: Finalizing and Generating Global Summary Plots")
     consolidated_summary_df <- if (length(all_summaries_list) > 0) dplyr::bind_rows(all_summaries_list) else tibble::tibble()
+    # Join per-factor stability onto the summary (P11), when computed.
+    stability_all <- if (length(stability_by_rank) > 0) dplyr::bind_rows(stability_by_rank) else NULL
+    if (!is.null(stability_all) && nrow(consolidated_summary_df) > 0) {
+      consolidated_summary_df <- dplyr::left_join(consolidated_summary_df, stability_all,
+                                                  by = c("Rank", "Factor"))
+    }
     # Stamp the run identifier (P2) as a leading column so summaries from many
     # runs can be pooled and traced. Character, so downstream numeric-column
     # selection (e.g. the summary heatmap) ignores it.
@@ -542,6 +591,7 @@ NMFprofileR <- function(
       ),
       nmf_rds = nmf_rds_paths,
       failures = failures,
+      stability = stability_by_rank,
       output_dirs = if (isTRUE(write_files)) dirs else NULL,
       runtime = runtime,
       provenance = provenance
