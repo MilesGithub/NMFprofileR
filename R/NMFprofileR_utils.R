@@ -663,3 +663,71 @@ write_run_provenance <- function(dirs, file_prefix, params, gprofiler_version, r
 
   invisible(list(manifest = manifest_path, session_info = session_path))
 }
+
+#' Classify an output file by its base name
+#'
+#' Maps a produced file to one of the manifest categories used by
+#' `write_output_manifest()`. Classification is by file name so it is robust to
+#' the directory layout.
+#'
+#' @param path A file path.
+#'
+#' @return A single character string giving the file's type.
+#'
+#' @noRd
+classify_output_file <- function(path) {
+  b <- basename(path)
+  if (grepl("_nmf_profile\\.rds$", b)) return("profile_bundle")
+  if (grepl("^NMF_Result_Object.*\\.rds$", b)) return("core_rds")
+  if (grepl("^Marker_Genes_", b)) return("marker_genes")
+  if (grepl("^Basis_Genes_", b)) return("basis_genes")
+  if (grepl("^Sample_Assignments_", b)) return("sample_assignments")
+  if (grepl("[Ee]nrichment.*\\.tsv$", b)) return("enrichment")
+  if (grepl("\\.pdf$", b)) return("plot")
+  if (grepl("Session_Info|Run_Manifest", b)) return("provenance")
+  if (grepl("run_log\\.txt$", b)) return("log")
+  if (grepl("[Ss]ummary|manifest", b)) return("summary")
+  "other"
+}
+
+#' Write a manifest of every output file produced by a run
+#'
+#' Enumerates the files written under the run's main results directory and
+#' records each one's path (relative to that directory) and type, so a consumer
+#' can discover the outputs of a run without globbing or parsing directory
+#' names. The manifest itself is excluded from the listing.
+#'
+#' @param dirs The named list of output directories from `setup_directories()`.
+#' @param extra_paths Optional character vector of additional file paths to
+#'   include (e.g. the single-object result bundle, which may live at the root
+#'   of the results directory).
+#'
+#' @return Invisibly, the path to the written manifest.
+#'
+#' @noRd
+write_output_manifest <- function(dirs, extra_paths = character(0)) {
+  main <- dirs$main
+  dir.create(dirs$summaries, showWarnings = FALSE, recursive = TRUE)
+  manifest_path <- file.path(dirs$summaries, "manifest.tsv")
+
+  all_paths <- list.files(main, recursive = TRUE, full.names = TRUE)
+  if (length(extra_paths) > 0) {
+    all_paths <- c(all_paths, extra_paths[file.exists(extra_paths)])
+  }
+  all_paths <- unique(all_paths)
+  # Exclude the manifest itself.
+  all_paths <- all_paths[basename(all_paths) != "manifest.tsv"]
+
+  # Relative path within the results directory (paths from list.files() and the
+  # file.path()-built extra paths both start with `main`).
+  rel <- substring(all_paths, nchar(main) + 2L)
+
+  manifest_df <- tibble::tibble(
+    file = rel,
+    type = vapply(all_paths, classify_output_file, character(1))
+  )
+  manifest_df <- manifest_df[order(manifest_df$type, manifest_df$file), ]
+
+  readr::write_tsv(manifest_df, manifest_path)
+  invisible(manifest_path)
+}

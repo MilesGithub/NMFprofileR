@@ -4,7 +4,7 @@
 \alias{print.nmf_profile}
 \title{Print an NMFprofileR result}
 \usage{
-print.nmf_profile(x, ...)
+\method{print}{nmf_profile}(x, ...)
 }
 \arguments{
 \item{x}{An `nmf_profile` object returned (invisibly) by [NMFprofileR()].}
