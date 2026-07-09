@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">NMFprofileR</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -35,6 +35,22 @@
 
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.0" id="nmfprofiler-030">NMFprofileR 0.3.0<a class="anchor" aria-label="anchor" href="#nmfprofiler-030"></a></h2>
+<div class="section level3">
+<h3 id="breaking-changes-0-3-0">Breaking changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-3-0"></a></h3>
+<ul><li>
+<code>emit_marker_genes</code> now defaults to <code>FALSE</code> (previously <code>TRUE</code>). Specificity marker genes and their enrichment are now opt-in, halving the g:Profiler network work of a default run. Set <code>emit_marker_genes = TRUE</code> to restore the previous behaviour. The return value still always carries the <code>marker_genes</code> and <code>enrichment$markers</code> elements (empty when markers are off).</li>
+</ul></div>
+<div class="section level3">
+<h3 id="new-features-0-3-0">New features<a class="anchor" aria-label="anchor" href="#new-features-0-3-0"></a></h3>
+<ul><li>Themeable plots: <code><a href="../reference/NMFprofileR.html">NMFprofileR()</a></code> gains <code>custom_theme</code> (a <code>ggplot2</code> theme applied to the ggplot-based plots) and <code>factor_palette</code> (a colour vector for factors), so figures can match a project’s house style without editing the package.</li>
+<li>
+<code>umap_n_neighbors</code> parametrizes the sample-coefficient UMAP. The embedding is drawn whenever the cohort has more samples than this value, and the neighbour count is capped at <code>n_samples - 1</code>, so smaller cohorts now get a UMAP too.</li>
+<li>Self-describing outputs: an optional <code>run_id</code> is stamped as a leading <code>Run_ID</code> column in the consolidated summary and recorded in the manifest; the whole <code>nmf_profile</code> result is saved as a single <code>&lt;prefix&gt;_nmf_profile.rds</code> bundle; and a <code>Summaries/manifest.tsv</code> lists every file a run produced with its type.</li>
+<li>Failed ranks are reported: the result gains a <code>failures</code> data frame (rank and reason) and <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> lists any failed ranks, instead of ranks silently vanishing from the output.</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.2.0" id="nmfprofiler-020">NMFprofileR 0.2.0<a class="anchor" aria-label="anchor" href="#nmfprofiler-020"></a></h2>
 <div class="section level3">

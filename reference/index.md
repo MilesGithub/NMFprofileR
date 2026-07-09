@@ -30,9 +30,9 @@ Individual, in-memory pipeline steps.
 
 The nmf_profile S3 object.
 
-- [`print.nmf_profile()`](https://milesgithub.github.io/NMFprofileR/reference/print.nmf_profile.md)
+- [`print(`*`<nmf_profile>`*`)`](https://milesgithub.github.io/NMFprofileR/reference/print.nmf_profile.md)
   : Print an NMFprofileR result
-- [`summary.nmf_profile()`](https://milesgithub.github.io/NMFprofileR/reference/summary.nmf_profile.md)
+- [`summary(`*`<nmf_profile>`*`)`](https://milesgithub.github.io/NMFprofileR/reference/summary.nmf_profile.md)
   : Summarize an NMFprofileR result
 
 ## Data

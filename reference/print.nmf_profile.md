@@ -5,7 +5,8 @@ Print an NMFprofileR result
 ## Usage
 
 ``` r
-print.nmf_profile(x, ...)
+# S3 method for class 'nmf_profile'
+print(x, ...)
 ```
 
 ## Arguments

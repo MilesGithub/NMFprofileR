@@ -27,8 +27,12 @@ NMFprofileR(
   verbose = FALSE,
   write_files = TRUE,
   on_duplicate_genes = c("collapse_max", "collapse_mean", "error"),
-  emit_marker_genes = TRUE,
-  variance_scale = c("raw", "log")
+  emit_marker_genes = FALSE,
+  variance_scale = c("raw", "log"),
+  custom_theme = NULL,
+  factor_palette = NULL,
+  umap_n_neighbors = 15,
+  run_id = NULL
 )
 ```
 
@@ -135,12 +139,16 @@ NMFprofileR(
 
 - emit_marker_genes:
 
-  A logical value. If TRUE (the default), in addition to the argmax
-  basis-gene assignment the pipeline also extracts factor-specific
-  marker genes (\`NMF::extractFeatures\`, Kim-Park specificity) and runs
-  enrichment on them, emitting \`Marker_Genes\_\*\` and
-  \`Marker_Enrichment\_\*\` outputs alongside the argmax results. The
-  argmax assignment remains the primary, unchanged output.
+  A logical value. If TRUE, in addition to the argmax basis-gene
+  assignment the pipeline also extracts factor-specific marker genes
+  (\`NMF::extractFeatures\`, Kim-Park specificity) and runs enrichment
+  on them, emitting \`Marker_Genes\_\*\` and \`Marker_Enrichment\_\*\`
+  outputs alongside the argmax results. Defaults to FALSE: markers are
+  opt-in because computing them runs a second g:Profiler query per rank
+  (roughly doubling the network work), which matters most for batch use.
+  The argmax assignment is always the primary output. Regardless of this
+  setting the return value always carries the \`marker_genes\` and
+  \`enrichment\$markers\` elements (empty when FALSE).
 
 - variance_scale:
 
@@ -152,6 +160,35 @@ NMFprofileR(
   variability on \`log2(x + 1)\`, reducing the mean-variance confound of
   count data. The matrix fed to NMF is always the original (raw,
   non-negative) scale regardless of this setting.
+
+- custom_theme:
+
+  An optional \`ggplot2\` theme object applied to the ggplot-based plots
+  (the factor-summary bar plot, enrichment dot plots, and the sample
+  UMAP) in place of the package's built-in theme. \`NULL\` (the default)
+  uses the built-in theme.
+
+- factor_palette:
+
+  An optional character vector of colours used to colour NMF factors
+  across the plots. \`NULL\` (the default) uses the built-in palette.
+  When a rank has more factors than supplied colours, the palette is
+  extended with \`grDevices::hcl.colors()\`.
+
+- umap_n_neighbors:
+
+  Integer; the number of neighbours for the sample-coefficient UMAP
+  embedding (default 15). The UMAP is only drawn when the cohort has
+  more samples than this value, and the effective neighbour count is
+  capped at \`n_samples - 1\` so smaller cohorts still embed.
+
+- run_id:
+
+  An optional identifier for this run. When supplied it is stamped as a
+  leading \`Run_ID\` column in \`consolidated_summary_df\` (and the
+  on-disk \`Consolidated_Summary.tsv\`) and recorded in the run
+  manifest, so results from many runs can be pooled and traced back to
+  their source.
 
 ## Value
 
@@ -201,6 +238,11 @@ Elements:
 
   A named list of the output directories created for the run, or
   \`NULL\` when \`write_files = FALSE\`.
+
+- \`failures\`:
+
+  A data frame (columns \`Rank\`, \`Reason\`) of ranks whose NMF fit
+  failed and were skipped; empty when every rank succeeded.
 
 - \`runtime\`:
 

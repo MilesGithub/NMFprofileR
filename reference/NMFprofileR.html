@@ -15,7 +15,7 @@ visualizations and summary reports."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">NMFprofileR</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -72,8 +72,12 @@ visualizations and summary reports.</p>
 <span>  verbose <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  write_files <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  on_duplicate_genes <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"collapse_max"</span>, <span class="st">"collapse_mean"</span>, <span class="st">"error"</span><span class="op">)</span>,</span>
-<span>  emit_marker_genes <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  variance_scale <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"raw"</span>, <span class="st">"log"</span><span class="op">)</span></span>
+<span>  emit_marker_genes <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  variance_scale <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"raw"</span>, <span class="st">"log"</span><span class="op">)</span>,</span>
+<span>  custom_theme <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  factor_palette <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  umap_n_neighbors <span class="op">=</span> <span class="fl">15</span>,</span>
+<span>  run_id <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -180,12 +184,15 @@ per-sample maximum across duplicate rows (the most expressed probe),
 
 
 <dt id="arg-emit-marker-genes">emit_marker_genes<a class="anchor" aria-label="anchor" href="#arg-emit-marker-genes"></a></dt>
-<dd><p>A logical value. If TRUE (the default), in addition
-to the argmax basis-gene assignment the pipeline also extracts
-factor-specific marker genes (`NMF::extractFeatures`, Kim-Park specificity)
-and runs enrichment on them, emitting `Marker_Genes_*` and
-`Marker_Enrichment_*` outputs alongside the argmax results. The argmax
-assignment remains the primary, unchanged output.</p></dd>
+<dd><p>A logical value. If TRUE, in addition to the argmax
+basis-gene assignment the pipeline also extracts factor-specific marker
+genes (`NMF::extractFeatures`, Kim-Park specificity) and runs enrichment on
+them, emitting `Marker_Genes_*` and `Marker_Enrichment_*` outputs alongside
+the argmax results. Defaults to FALSE: markers are opt-in because computing
+them runs a second g:Profiler query per rank (roughly doubling the network
+work), which matters most for batch use. The argmax assignment is always the
+primary output. Regardless of this setting the return value always carries
+the `marker_genes` and `enrichment$markers` elements (empty when FALSE).</p></dd>
 
 
 <dt id="arg-variance-scale">variance_scale<a class="anchor" aria-label="anchor" href="#arg-variance-scale"></a></dt>
@@ -196,6 +203,34 @@ TPM); on such data `expression_threshold = 10` and raw-scale variance are
 meaningful. `"log"` ranks variability on `log2(x + 1)`, reducing the
 mean-variance confound of count data. The matrix fed to NMF is always the
 original (raw, non-negative) scale regardless of this setting.</p></dd>
+
+
+<dt id="arg-custom-theme">custom_theme<a class="anchor" aria-label="anchor" href="#arg-custom-theme"></a></dt>
+<dd><p>An optional `ggplot2` theme object applied to the
+ggplot-based plots (the factor-summary bar plot, enrichment dot plots, and
+the sample UMAP) in place of the package's built-in theme. `NULL` (the
+default) uses the built-in theme.</p></dd>
+
+
+<dt id="arg-factor-palette">factor_palette<a class="anchor" aria-label="anchor" href="#arg-factor-palette"></a></dt>
+<dd><p>An optional character vector of colours used to colour
+NMF factors across the plots. `NULL` (the default) uses the built-in
+palette. When a rank has more factors than supplied colours, the palette is
+extended with `grDevices::hcl.colors()`.</p></dd>
+
+
+<dt id="arg-umap-n-neighbors">umap_n_neighbors<a class="anchor" aria-label="anchor" href="#arg-umap-n-neighbors"></a></dt>
+<dd><p>Integer; the number of neighbours for the
+sample-coefficient UMAP embedding (default 15). The UMAP is only drawn when
+the cohort has more samples than this value, and the effective neighbour
+count is capped at `n_samples - 1` so smaller cohorts still embed.</p></dd>
+
+
+<dt id="arg-run-id">run_id<a class="anchor" aria-label="anchor" href="#arg-run-id"></a></dt>
+<dd><p>An optional identifier for this run. When supplied it is stamped
+as a leading `Run_ID` column in `consolidated_summary_df` (and the on-disk
+`Consolidated_Summary.tsv`) and recorded in the run manifest, so results
+from many runs can be pooled and traced back to their source.</p></dd>
 
 </dl></div>
     <div class="section level2">
@@ -235,6 +270,10 @@ original (raw, non-negative) scale regardless of this setting.</p></dd>
     <dt>`output_dirs`</dt>
 <dd><p>A named list of the output directories created for
       the run, or `NULL` when `write_files = FALSE`.</p></dd>
+
+    <dt>`failures`</dt>
+<dd><p>A data frame (columns `Rank`, `Reason`) of ranks whose
+      NMF fit failed and were skipped; empty when every rank succeeded.</p></dd>
 
     <dt>`runtime`</dt>
 <dd><p>A `difftime` giving the total pipeline runtime.</p></dd>

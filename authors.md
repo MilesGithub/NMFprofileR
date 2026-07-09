@@ -8,13 +8,13 @@
 ## Citation
 
 Mee M (2025). *NMFprofileR: Consensus NMF Profiling and Functional
-Enrichment of Transcriptomic Data*. R package version 0.2.0,
+Enrichment of Transcriptomic Data*. R package version 0.3.0,
 <https://github.com/MilesGithub/NMFprofileR>.
 
     @Manual{,
       title = {{NMFprofileR}: Consensus NMF Profiling and Functional Enrichment of Transcriptomic Data},
       author = {Miles Mee},
       year = {2025},
-      note = {R package version 0.2.0},
+      note = {R package version 0.3.0},
       url = {https://github.com/MilesGithub/NMFprofileR},
     }
