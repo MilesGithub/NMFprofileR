@@ -11,8 +11,8 @@
 <script src="deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Consensus NMF Profiling and Functional Enrichment of Transcriptomic Data">
-<meta name="description" content="Provides a reproducible pipeline for nonnegative matrix factorization (NMF) of transcriptomic data across multiple ranks, including consensus clustering, visualization, and downstream functional interpretation. Identified factor-specific gene sets are analyzed with Gene Ontology (GO) and pathway enrichment (via gprofiler2) to reveal underlying biological processes.">
-<meta property="og:description" content="Provides a reproducible pipeline for nonnegative matrix factorization (NMF) of transcriptomic data across multiple ranks, including consensus clustering, visualization, and downstream functional interpretation. Identified factor-specific gene sets are analyzed with Gene Ontology (GO) and pathway enrichment (via gprofiler2) to reveal underlying biological processes.">
+<meta name="description" content="Provides a reproducible pipeline for nonnegative matrix factorization (NMF) of transcriptomic data across multiple ranks, including consensus clustering, visualization, and downstream functional interpretation. Identified factor-specific gene sets are analyzed with Gene Ontology (GO) and pathway enrichment (via gprofiler2) to reveal underlying biological processes. Additional tools support batch analysis across cohorts, alignment of factors across runs, projection of new samples onto a learned factorization, and factor stability assessment.">
+<meta property="og:description" content="Provides a reproducible pipeline for nonnegative matrix factorization (NMF) of transcriptomic data across multiple ranks, including consensus clustering, visualization, and downstream functional interpretation. Identified factor-specific gene sets are analyzed with Gene Ontology (GO) and pathway enrichment (via gprofiler2) to reveal underlying biological processes. Additional tools support batch analysis across cohorts, alignment of factors across runs, projection of new samples onto a learned factorization, and factor stability assessment.">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -67,12 +67,14 @@
 <h2 id="features">Features<a class="anchor" aria-label="anchor" href="#features"></a>
 </h2>
 <ul>
-<li>Multi-rank NMF with reproducible results (<code>brunet</code>, <code>lee</code>, and others).</li>
+<li>Multi-rank NMF with reproducible results (<code>brunet</code>, <code>lee</code>, and others), with an optional parallel backend that still reproduces the seeded result.</li>
 <li>Composable, exported pipeline stages returning results in memory, and an <code>nmf_profile</code> result object.</li>
-<li>Per-factor basis gene assignment (argmax) plus specificity-scored marker genes.</li>
-<li>Automated generation of rank survey/diagnostics plots, consensus maps, factor correspondence heatmaps, and consolidated summary metrics.</li>
-<li>Supports user-defined gene backgrounds for enrichment analysis.</li>
-<li>Reproducibility: run manifest, g:Profiler database version, and session info.</li>
+<li>Per-factor basis gene assignment (argmax or Kim-Park specificity) plus specificity-scored marker genes.</li>
+<li>Batch processing across many cohorts (<code><a href="reference/run_nmf_batch.html">run_nmf_batch()</a></code>) — resumable and consolidated into one tagged summary.</li>
+<li>Cross-run factor alignment (<code><a href="reference/align_factors.html">align_factors()</a></code>), projection of new samples onto a learned factorization (<code><a href="reference/nmf_project.html">nmf_project()</a></code>), and factor stability assessment by subsampling (<code><a href="reference/nmf_stability.html">nmf_stability()</a></code>).</li>
+<li>Automated generation of rank survey/diagnostics plots, consensus maps, factor correspondence heatmaps, and consolidated summary metrics; themeable plots.</li>
+<li>User-defined gene backgrounds for enrichment, with an oversized-query guard, automatic retry, and an optional on-disk result cache.</li>
+<li>Reproducibility: run manifest, single-object result bundle, g:Profiler database version, and session info.</li>
 </ul>
 <hr>
 </div>
@@ -114,7 +116,26 @@
 <span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>result<span class="sc">$</span>marker_genes[[<span class="st">"3"</span>]]   <span class="co"># factor-specific marker genes</span></span></code></pre></div>
 <p>Set <code>write_files = FALSE</code> to compute entirely in memory without creating files.</p>
 <p>The pipeline stages are also exported for composable use: <code><a href="reference/nmf_preprocess.html">nmf_preprocess()</a></code>, <code><a href="reference/nmf_fit.html">nmf_fit()</a></code>, <code><a href="reference/nmf_basis_genes.html">nmf_basis_genes()</a></code>, <code><a href="reference/nmf_marker_genes.html">nmf_marker_genes()</a></code>, <code><a href="reference/nmf_sample_assignments.html">nmf_sample_assignments()</a></code>, <code><a href="reference/nmf_enrichment.html">nmf_enrichment()</a></code>, and <code><a href="reference/nmf_rank_diagnostics.html">nmf_rank_diagnostics()</a></code>.</p>
+<div class="section level3">
+<h3 id="batch-analysis">Batch analysis<a class="anchor" aria-label="anchor" href="#batch-analysis"></a>
+</h3>
+<p>Run many cohorts and consolidate the results into one summary tagged by cohort:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode R"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>batch <span class="ot">&lt;-</span> <span class="fu">run_nmf_batch</span>(</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">cohort_A =</span> m1, <span class="at">cohort_B =</span> m2),   <span class="co"># named list of expression matrices</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="at">output_dir =</span> <span class="st">"batch_out"</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">nmf_rank   =</span> <span class="dv">2</span><span class="sc">:</span><span class="dv">4</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>)</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>batch<span class="sc">$</span>consolidated</span></code></pre></div>
+<p>The batch driver is resilient (a failing cohort is recorded, not fatal) and resumable (already-completed cohorts are skipped). See the <em>Batch analysis</em> vignette.</p>
+</div>
+<div class="section level3">
+<h3 id="comparing-projecting-and-validating-factors">Comparing, projecting, and validating factors<a class="anchor" aria-label="anchor" href="#comparing-projecting-and-validating-factors"></a>
+</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode R"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">align_factors</span>(<span class="fu">list</span>(<span class="at">run_a =</span> fit_a, <span class="at">run_b =</span> fit_b))  <span class="co"># match factors across runs</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="fu">nmf_project</span>(fit, <span class="at">newdata =</span> m_new)                  <span class="co"># score new samples onto W</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="fu">nmf_stability</span>(m, <span class="at">rank =</span> <span class="dv">3</span>, <span class="at">nboot =</span> <span class="dv">30</span>)             <span class="co"># factor reproducibility</span></span></code></pre></div>
 <hr>
+</div>
 </div>
 <div class="section level2">
 <h2 id="output">Output<a class="anchor" aria-label="anchor" href="#output"></a>
@@ -137,7 +158,10 @@
 <code>Plots/</code> — heatmaps, consensus/diagnostic maps, UMAP, and enrichment plots.<br>
 </li>
 <li>
-<code>Summaries/</code> — consolidated summary, run manifest, and session info.</li>
+<code>Summaries/</code> — consolidated summary, run manifest, session info, and a <code>manifest.tsv</code> listing every file produced.<br>
+</li>
+<li>
+<code>&lt;prefix&gt;_nmf_profile.rds</code> — the whole <code>nmf_profile</code> result as a single object.</li>
 </ul>
 <hr>
 </div>
@@ -162,7 +186,7 @@
 <div class="section level2">
 <h2 id="citation">Citation<a class="anchor" aria-label="anchor" href="#citation"></a>
 </h2>
-<div class="sourceCode" id="cb4"><pre class="sourceCode R"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>Miles Mee, <span class="fl">2025.</span> NMFprofileR<span class="sc">:</span> Comprehensive multi<span class="sc">-</span>rank NMF analysis and enrichment <span class="cf">in</span> R. GitHub repository<span class="sc">:</span> https<span class="sc">:</span><span class="er">//</span>github.com<span class="sc">/</span>MilesGithub<span class="sc">/</span>NMFprofileR</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode R"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>Miles Mee, <span class="fl">2025.</span> NMFprofileR<span class="sc">:</span> Comprehensive multi<span class="sc">-</span>rank NMF analysis and enrichment <span class="cf">in</span> R. GitHub repository<span class="sc">:</span> https<span class="sc">:</span><span class="er">//</span>github.com<span class="sc">/</span>MilesGithub<span class="sc">/</span>NMFprofileR</span></code></pre></div>
 <p>Also cite underlying methods:</p>
 <ul>
 <li>Gaujoux, R., &amp; Seoighe, C. (2010). A flexible R package for nonnegative matrix factorization. <em>BMC Bioinformatics</em>, 11, 367.<br>

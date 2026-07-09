@@ -19,16 +19,28 @@ consolidated summary and consensus maps.
 ## Features
 
 - Multi-rank NMF with reproducible results (`brunet`, `lee`, and
-  others).
+  others), with an optional parallel backend that still reproduces the
+  seeded result.
 - Composable, exported pipeline stages returning results in memory, and
   an `nmf_profile` result object.
-- Per-factor basis gene assignment (argmax) plus specificity-scored
-  marker genes.
+- Per-factor basis gene assignment (argmax or Kim-Park specificity) plus
+  specificity-scored marker genes.
+- Batch processing across many cohorts
+  ([`run_nmf_batch()`](https://milesgithub.github.io/NMFprofileR/reference/run_nmf_batch.md))
+  — resumable and consolidated into one tagged summary.
+- Cross-run factor alignment
+  ([`align_factors()`](https://milesgithub.github.io/NMFprofileR/reference/align_factors.md)),
+  projection of new samples onto a learned factorization
+  ([`nmf_project()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_project.md)),
+  and factor stability assessment by subsampling
+  ([`nmf_stability()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_stability.md)).
 - Automated generation of rank survey/diagnostics plots, consensus maps,
-  factor correspondence heatmaps, and consolidated summary metrics.
-- Supports user-defined gene backgrounds for enrichment analysis.
-- Reproducibility: run manifest, g:Profiler database version, and
-  session info.
+  factor correspondence heatmaps, and consolidated summary metrics;
+  themeable plots.
+- User-defined gene backgrounds for enrichment, with an oversized-query
+  guard, automatic retry, and an optional on-disk result cache.
+- Reproducibility: run manifest, single-object result bundle, g:Profiler
+  database version, and session info.
 
 ------------------------------------------------------------------------
 
@@ -95,6 +107,32 @@ The pipeline stages are also exported for composable use:
 and
 [`nmf_rank_diagnostics()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_rank_diagnostics.md).
 
+### Batch analysis
+
+Run many cohorts and consolidate the results into one summary tagged by
+cohort:
+
+``` R
+batch <- run_nmf_batch(
+  list(cohort_A = m1, cohort_B = m2),   # named list of expression matrices
+  output_dir = "batch_out",
+  nmf_rank   = 2:4
+)
+batch$consolidated
+```
+
+The batch driver is resilient (a failing cohort is recorded, not fatal)
+and resumable (already-completed cohorts are skipped). See the *Batch
+analysis* vignette.
+
+### Comparing, projecting, and validating factors
+
+``` R
+align_factors(list(run_a = fit_a, run_b = fit_b))  # match factors across runs
+nmf_project(fit, newdata = m_new)                  # score new samples onto W
+nmf_stability(m, rank = 3, nboot = 30)             # factor reproducibility
+```
+
 ------------------------------------------------------------------------
 
 ## Output
@@ -109,7 +147,10 @@ With `output_prefix = "results/NMF"` the pipeline writes to
   widths.  
 - `Plots/` — heatmaps, consensus/diagnostic maps, UMAP, and enrichment
   plots.  
-- `Summaries/` — consolidated summary, run manifest, and session info.
+- `Summaries/` — consolidated summary, run manifest, session info, and a
+  `manifest.tsv` listing every file produced.  
+- `<prefix>_nmf_profile.rds` — the whole `nmf_profile` result as a
+  single object.
 
 ------------------------------------------------------------------------
 
