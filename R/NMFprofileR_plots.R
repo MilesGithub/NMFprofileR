@@ -39,6 +39,16 @@ custom_theme <- function() {
 #'   factor, used to generate the enrichment Manhattan plots.
 #' @param nmf_seed An integer seed set immediately before the UMAP embedding so
 #'   the sample-coefficient UMAP is reproducible.
+#' @param user_theme An optional ggplot2 theme object applied to the ggplot-based
+#'   plots (factor summary, enrichment dot plots, UMAP) in place of the package's
+#'   default `custom_theme()`. `NULL` (the default) uses `custom_theme()`.
+#' @param factor_palette An optional character vector of colours used to colour
+#'   factors. `NULL` (the default) uses the built-in palette. The palette is
+#'   extended with `grDevices::hcl.colors()` when there are more factors than
+#'   colours.
+#' @param umap_n_neighbors Integer number of neighbours for the sample-coefficient
+#'   UMAP. The embedding is only drawn when the number of samples exceeds this
+#'   value, and the effective neighbour count is capped at `n_samples - 1`.
 #'
 #' @importFrom tidyselect where
 #'
@@ -46,17 +56,25 @@ custom_theme <- function() {
 generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gprofiler_df,
                                 combined_enrichment_results_df, expr_matrix, basis_genes,
                                 k_plots_dir, file_prefix, nrun, top_n, gost_objects_list,
-                                nmf_seed = 123456) {
+                                nmf_seed = 123456, user_theme = NULL, factor_palette = NULL,
+                                umap_n_neighbors = 15) {
 
   cli::cli_alert_info("Generating plots for k={k}...")
+
+  # Resolve the theme applied to ggplot-based plots (user override or default).
+  plot_theme <- if (is.null(user_theme)) custom_theme() else user_theme
 
   # --- Create Annotation Objects for Heatmaps with a Robust Color Palette ---
   H <- NMF::coef(nmf_result)
   sample_annot_df <- data.frame(Factor = sample_assignments$Dominant_Factor)
   rownames(sample_annot_df) <- sample_assignments$SampleID
 
-  # Define a base palette and extend it if k is large
-  base_palette <- c("#008000", "#800080", "#ffcc00", "#d40000", "#d40055", "#0073c2")
+  # Define a base palette (user-supplied or built-in) and extend it if k is large
+  base_palette <- if (is.null(factor_palette)) {
+    c("#008000", "#800080", "#ffcc00", "#d40000", "#d40055", "#0073c2")
+  } else {
+    as.character(factor_palette)
+  }
   final_palette <- if (k <= length(base_palette)) {
     base_palette[1:k]
   } else {
@@ -83,7 +101,7 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
       ggplot2::labs(title = "NMF Factor Summary", subtitle = paste("k =", k), x = "NMF Factor", y = "Percent of Cohort") +
       ggplot2::theme_classic(base_size = 12) +
       ggplot2::scale_fill_manual(values = factor_colors, guide = "none", drop = FALSE) +
-      custom_theme() +
+      plot_theme +
       ggplot2::theme(legend.position = "none")
 
     ggplot2::ggsave(
@@ -239,7 +257,7 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
                 subtitle = paste("Cohort k =", k, "|", factor_name),
                 x = "-Log10(Adjusted P-value)", y = NULL, size = "Gene Count"
               ) +
-              ggplot2::theme_bw(base_size = 11) + custom_theme() + ggplot2::theme(axis.text.y = ggplot2::element_text(size = 9))
+              ggplot2::theme_bw(base_size = 11) + plot_theme + ggplot2::theme(axis.text.y = ggplot2::element_text(size = 9))
 
             # Create a file-safe name and save the plot
             safe_src_name <- gsub(":", "_", src)
@@ -258,9 +276,12 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
 
   # --- UMAP of Sample Coefficients ---
   H_matrix_t <- t(H)
-  if (nrow(H_matrix_t) > 15) { # UMAP is more stable with >15 neighbors
+  # UMAP needs more samples than neighbours; cap the neighbour count at
+  # n_samples - 1 so a modest umap_n_neighbors still works on smaller cohorts.
+  if (nrow(H_matrix_t) > umap_n_neighbors) {
+    n_nb <- min(umap_n_neighbors, nrow(H_matrix_t) - 1L)
     set.seed(nmf_seed)
-    umap_res <- uwot::umap(H_matrix_t, n_neighbors = 15)
+    umap_res <- uwot::umap(H_matrix_t, n_neighbors = n_nb)
     umap_df <- as.data.frame(umap_res) %>%
       `colnames<-`(c("UMAP1", "UMAP2")) %>%
       dplyr::mutate(Dominant_Factor = sample_assignments$Dominant_Factor)
@@ -270,7 +291,7 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
         ggplot2::geom_point(alpha = 0.8, size = 2) +
         ggplot2::scale_color_manual(values = factor_colors, drop = FALSE) +
         ggplot2::labs(title = "UMAP of NMF Sample Coefficients", subtitle = paste("k =", k), color = "NMF Factor") +
-        ggplot2::theme_minimal() + custom_theme()
+        ggplot2::theme_minimal() + plot_theme
 
       ggplot2::ggsave(
         filename = file.path(k_plots_dir, paste0("05_UMAP_Plot_Rank_k", k, ".pdf")),
@@ -403,12 +424,17 @@ generate_rank_plots <- function(k, nmf_result, sample_assignments, combined_gpro
 #' @param nrun Number of NMF runs performed.
 #' @param dirs A named list of output directories.
 #' @param file_prefix The base prefix for output file names.
+#' @param user_theme An optional ggplot2 theme object applied to the ggplot-based
+#'   global plots in place of the default `custom_theme()`.
 #' @importFrom tidyselect where
 #'
 #' @noRd
-generate_global_plots <- function(rank_metrics, consolidated_summary_df, nmf_rank, nrun, dirs, file_prefix) {
+generate_global_plots <- function(rank_metrics, consolidated_summary_df, nmf_rank, nrun, dirs, file_prefix,
+                                   user_theme = NULL) {
 
   cli::cli_h2("Generating final summary files and global plots...")
+
+  plot_theme <- if (is.null(user_theme)) custom_theme() else user_theme
 
   # --- Rank diagnostics: cophenetic / dispersion / silhouette across ranks ---
   diag_df <- tryCatch(nmf_rank_diagnostics(rank_metrics), error = function(e) NULL)
@@ -419,7 +445,7 @@ generate_global_plots <- function(rank_metrics, consolidated_summary_df, nmf_ran
       ggplot2::geom_point(color = "#0073c2") +
       ggplot2::facet_wrap(~ .data$metric, scales = "free_y") +
       ggplot2::labs(title = "NMF rank-selection diagnostics", x = "Rank (k)", y = NULL) +
-      ggplot2::theme_bw(base_size = 11) + custom_theme()
+      ggplot2::theme_bw(base_size = 11) + plot_theme
     grDevices::pdf(file.path(dirs$plots, "05_Rank_Diagnostics.pdf"), 9, 4)
     print(diag_plot)
     grDevices::dev.off()

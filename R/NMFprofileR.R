@@ -71,12 +71,31 @@
 #'   rownames of `expression_data`: `"collapse_max"` (the default) keeps the
 #'   per-sample maximum across duplicate rows (the most expressed probe),
 #'   `"collapse_mean"` averages them, and `"error"` stops with a message.
-#' @param emit_marker_genes A logical value. If TRUE (the default), in addition
-#'   to the argmax basis-gene assignment the pipeline also extracts
-#'   factor-specific marker genes (`NMF::extractFeatures`, Kim-Park specificity)
-#'   and runs enrichment on them, emitting `Marker_Genes_*` and
-#'   `Marker_Enrichment_*` outputs alongside the argmax results. The argmax
-#'   assignment remains the primary, unchanged output.
+#' @param emit_marker_genes A logical value. If TRUE, in addition to the argmax
+#'   basis-gene assignment the pipeline also extracts factor-specific marker
+#'   genes (`NMF::extractFeatures`, Kim-Park specificity) and runs enrichment on
+#'   them, emitting `Marker_Genes_*` and `Marker_Enrichment_*` outputs alongside
+#'   the argmax results. Defaults to FALSE: markers are opt-in because computing
+#'   them runs a second g:Profiler query per rank (roughly doubling the network
+#'   work), which matters most for batch use. The argmax assignment is always the
+#'   primary output. Regardless of this setting the return value always carries
+#'   the `marker_genes` and `enrichment$markers` elements (empty when FALSE).
+#' @param custom_theme An optional `ggplot2` theme object applied to the
+#'   ggplot-based plots (the factor-summary bar plot, enrichment dot plots, and
+#'   the sample UMAP) in place of the package's built-in theme. `NULL` (the
+#'   default) uses the built-in theme.
+#' @param factor_palette An optional character vector of colours used to colour
+#'   NMF factors across the plots. `NULL` (the default) uses the built-in
+#'   palette. When a rank has more factors than supplied colours, the palette is
+#'   extended with `grDevices::hcl.colors()`.
+#' @param umap_n_neighbors Integer; the number of neighbours for the
+#'   sample-coefficient UMAP embedding (default 15). The UMAP is only drawn when
+#'   the cohort has more samples than this value, and the effective neighbour
+#'   count is capped at `n_samples - 1` so smaller cohorts still embed.
+#' @param run_id An optional identifier for this run. When supplied it is stamped
+#'   as a leading `Run_ID` column in `consolidated_summary_df` (and the on-disk
+#'   `Consolidated_Summary.tsv`) and recorded in the run manifest, so results
+#'   from many runs can be pooled and traced back to their source.
 #'
 #' @importFrom grDevices dev.control dev.off pdf recordPlot replayPlot
 #' @importFrom cluster silhouette
@@ -101,6 +120,8 @@
 #'       (empty when `write_files = FALSE`).}
 #'     \item{`output_dirs`}{A named list of the output directories created for
 #'       the run, or `NULL` when `write_files = FALSE`.}
+#'     \item{`failures`}{A data frame (columns `Rank`, `Reason`) of ranks whose
+#'       NMF fit failed and were skipped; empty when every rank succeeded.}
 #'     \item{`runtime`}{A `difftime` giving the total pipeline runtime.}
 #'     \item{`provenance`}{A named list recording the captured g:Profiler
 #'       database version (`gprofiler_version`), the `run_parameters` used, and
@@ -130,8 +151,12 @@ NMFprofileR <- function(
     verbose = FALSE,
     write_files = TRUE,
     on_duplicate_genes = c("collapse_max", "collapse_mean", "error"),
-    emit_marker_genes = TRUE,
-    variance_scale = c("raw", "log")
+    emit_marker_genes = FALSE,
+    variance_scale = c("raw", "log"),
+    custom_theme = NULL,
+    factor_palette = NULL,
+    umap_n_neighbors = 15,
+    run_id = NULL
 ) {
   on_duplicate_genes <- match.arg(on_duplicate_genes)
   variance_scale <- match.arg(variance_scale)
@@ -237,13 +262,30 @@ NMFprofileR <- function(
   enrichment_per_factor_by_rank <- list()
   enrichment_combined_by_rank <- list()
   marker_enrichment_by_rank <- list()
+  failed_ranks <- integer(0)      # ranks whose NMF fit failed (P5)
+  failure_reasons <- character(0)
 
   for (k in nmf_rank) {
 
     cli::cli_rule(left = paste("Processing Rank k =", k))
     vmsg("Running NMF for k = {k} ...")
-    nmf_result <- run_nmf_for_rank(k, expr_matrix, nmf_method, nmf_nrun, nmf_seed, dirs$nmf_core, file_prefix,
-                                   write_files = write_files)
+    # Capture the reason a fit fails (nmf_fit() traps the error into a warning
+    # and returns NULL). The handler does not muffle the warning, so it still
+    # surfaces as before; we only record its message for the failure report.
+    last_fit_warning <- NA_character_
+    nmf_result <- withCallingHandlers(
+      run_nmf_for_rank(k, expr_matrix, nmf_method, nmf_nrun, nmf_seed, dirs$nmf_core, file_prefix,
+                       write_files = write_files),
+      warning = function(w) last_fit_warning <<- conditionMessage(w)
+    )
+
+    if (is.null(nmf_result)) {
+      reason <- if (is.na(last_fit_warning)) "NMF fit returned NULL" else last_fit_warning
+      failed_ranks <- c(failed_ranks, k)
+      failure_reasons <- c(failure_reasons, reason)
+      cli::cli_alert_warning("Rank k={k} failed and was skipped: {reason}")
+      log_line("Rank k=", k, ": FAILED (", reason, ").")
+    }
 
     if (!is.null(nmf_result)) {
 
@@ -377,7 +419,10 @@ NMFprofileR <- function(
               nrun = nmf_nrun,
               top_n = enrichment_plot_top_n,
               gost_objects_list = gost_objects_list,
-              nmf_seed = nmf_seed
+              nmf_seed = nmf_seed,
+              user_theme = custom_theme,
+              factor_palette = factor_palette,
+              umap_n_neighbors = umap_n_neighbors
             ),
             error = function(e) {
               cli::cli_alert_warning("generate_rank_plots() failed for k={k}: {conditionMessage(e)}")
@@ -389,13 +434,21 @@ NMFprofileR <- function(
     # --- Finalize and Global Plots ---
     cli::cli_h2("Step 4: Finalizing and Generating Global Summary Plots")
     consolidated_summary_df <- if (length(all_summaries_list) > 0) dplyr::bind_rows(all_summaries_list) else tibble::tibble()
+    # Stamp the run identifier (P2) as a leading column so summaries from many
+    # runs can be pooled and traced. Character, so downstream numeric-column
+    # selection (e.g. the summary heatmap) ignores it.
+    if (!is.null(run_id) && nrow(consolidated_summary_df) > 0) {
+      consolidated_summary_df <- dplyr::mutate(consolidated_summary_df,
+                                               Run_ID = as.character(run_id), .before = 1)
+    }
     if (isTRUE(write_files)) {
       dir.create(dirs$summaries, showWarnings = FALSE, recursive = TRUE)
       if (nrow(consolidated_summary_df) > 0) readr::write_tsv(consolidated_summary_df, file.path(dirs$summaries, "Consolidated_Summary.tsv"))
 
       # generate global plots (guard if summary empty)
       tryCatch({
-        generate_global_plots(all_rank_metrics_df, consolidated_summary_df, nmf_rank, nmf_nrun, dirs, file_prefix)
+        generate_global_plots(all_rank_metrics_df, consolidated_summary_df, nmf_rank, nmf_nrun, dirs, file_prefix,
+                              user_theme = custom_theme)
       }, error = function(e) {
         cli::cli_alert_warning("generate_global_plots() failed: {conditionMessage(e)}")
       })
@@ -405,9 +458,19 @@ NMFprofileR <- function(
     runtime <- difftime(time_end, time_start)
     cli::cli_alert_success("NMFprofileR Pipeline finished successfully in {format(runtime)}.")
 
+    # --- Failure report (P5): ranks whose NMF fit failed and were skipped. ---
+    failures <- data.frame(Rank = failed_ranks, Reason = failure_reasons,
+                           stringsAsFactors = FALSE)
+    if (nrow(failures) > 0) {
+      cli::cli_alert_warning(
+        "{nrow(failures)} of {length(nmf_rank)} rank(s) failed: {paste(failures$Rank, collapse = ', ')}."
+      )
+    }
+
     # --- Provenance: record the exact parameters, g:Profiler snapshot, and
     #     session information that produced this run (reproducibility hardening).
     run_parameters <- list(
+      run_id               = run_id,
       nmf_rank             = nmf_rank,
       nmf_method           = nmf_method,
       nmf_nrun             = nmf_nrun,
@@ -453,11 +516,27 @@ NMFprofileR <- function(
         markers    = marker_enrichment_by_rank
       ),
       nmf_rds = nmf_rds_paths,
+      failures = failures,
       output_dirs = if (isTRUE(write_files)) dirs else NULL,
       runtime = runtime,
       provenance = provenance
     )
     class(result) <- "nmf_profile"
+
+    # --- Self-describing outputs (P2): save the whole result as a single .rds
+    #     bundle and write a manifest of every file produced this run. ---
+    if (isTRUE(write_files)) {
+      bundle_path <- file.path(dirs$main, paste0(file_prefix, "_nmf_profile.rds"))
+      manifest_tsv_path <- file.path(dirs$summaries, "manifest.tsv")
+      result$provenance$files$profile_bundle <- bundle_path
+      result$provenance$files$output_manifest <- manifest_tsv_path
+      tryCatch({
+        saveRDS(result, bundle_path)
+        write_output_manifest(dirs, extra_paths = bundle_path)
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to write result bundle/manifest: {conditionMessage(e)}")
+      })
+    }
 
   invisible(result)
 }

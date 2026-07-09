@@ -1,3 +1,30 @@
+# NMFprofileR 0.3.0
+
+## Breaking changes
+
+* `emit_marker_genes` now defaults to `FALSE` (previously `TRUE`). Specificity
+  marker genes and their enrichment are now opt-in, halving the g:Profiler
+  network work of a default run. Set `emit_marker_genes = TRUE` to restore the
+  previous behaviour. The return value still always carries the `marker_genes`
+  and `enrichment$markers` elements (empty when markers are off).
+
+## New features
+
+* Themeable plots: `NMFprofileR()` gains `custom_theme` (a `ggplot2` theme
+  applied to the ggplot-based plots) and `factor_palette` (a colour vector for
+  factors), so figures can match a project's house style without editing the
+  package.
+* `umap_n_neighbors` parametrizes the sample-coefficient UMAP. The embedding is
+  drawn whenever the cohort has more samples than this value, and the neighbour
+  count is capped at `n_samples - 1`, so smaller cohorts now get a UMAP too.
+* Self-describing outputs: an optional `run_id` is stamped as a leading `Run_ID`
+  column in the consolidated summary and recorded in the manifest; the whole
+  `nmf_profile` result is saved as a single `<prefix>_nmf_profile.rds` bundle;
+  and a `Summaries/manifest.tsv` lists every file a run produced with its type.
+* Failed ranks are reported: the result gains a `failures` data frame (rank and
+  reason) and `print()` lists any failed ranks, instead of ranks silently
+  vanishing from the output.
+
 # NMFprofileR 0.2.0
 
 ## New features

@@ -285,6 +285,9 @@ print.nmf_profile <- function(x, ...) {
 
   cat("<nmf_profile>\n")
   cat(sprintf("  Ranks fitted : %s\n", if (length(ranks)) paste(ranks, collapse = ", ") else "none"))
+  if (!is.null(x$failures) && nrow(x$failures) > 0) {
+    cat(sprintf("  Ranks failed : %s\n", paste(x$failures$Rank, collapse = ", ")))
+  }
   cat(sprintf("  Samples      : %s\n", n_samples))
   cat(sprintf("  Runtime      : %s\n", format(x$runtime)))
   cat(sprintf("  g:Profiler   : %s\n", if (is.null(ver) || is.na(ver)) "not captured" else ver))
