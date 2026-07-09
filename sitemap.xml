@@ -9,6 +9,7 @@
 <url><loc>https://milesgithub.github.io/NMFprofileR/index.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/news/index.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/NMFprofileR.html</loc></url>
+<url><loc>https://milesgithub.github.io/NMFprofileR/reference/align_factors.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/example_expression_data.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/index.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/nmf_basis_genes.html</loc></url>
@@ -16,8 +17,10 @@
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/nmf_fit.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/nmf_marker_genes.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/nmf_preprocess.html</loc></url>
+<url><loc>https://milesgithub.github.io/NMFprofileR/reference/nmf_project.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/nmf_rank_diagnostics.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/nmf_sample_assignments.html</loc></url>
+<url><loc>https://milesgithub.github.io/NMFprofileR/reference/nmf_stability.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/pipe.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/print.nmf_profile.html</loc></url>
 <url><loc>https://milesgithub.github.io/NMFprofileR/reference/run_nmf_batch.html</loc></url>

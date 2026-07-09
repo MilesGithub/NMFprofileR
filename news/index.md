@@ -1,5 +1,31 @@
 # Changelog
 
+## NMFprofileR 0.5.0
+
+### New features
+
+- [`align_factors()`](https://milesgithub.github.io/NMFprofileR/reference/align_factors.md)
+  matches NMF factors across runs (cohorts, ranks, resamples) by
+  basis-loading correlation to a reference run, returning the full
+  correlation table plus a one-to-one matching (`greedy` by default;
+  `hungarian` via
+  [`clue::solve_LSAP()`](https://rdrr.io/pkg/clue/man/solve_LSAP.html)
+  when the `clue` package is installed).
+- [`nmf_project()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_project.md)
+  scores new samples against an existing factorization by solving for
+  their coefficients with the basis matrix held fixed (non-negative
+  multiplicative updates), returning per-sample factor scores and
+  assignments.
+- [`nmf_stability()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_stability.md)
+  assesses factor reproducibility by refitting on subsamples of the
+  samples and reporting each factor’s mean best-match correlation to the
+  full-data fit. `NMFprofileR(stability_nboot = N)` runs it per rank
+  (opt-in, off by default), adding a `Stability` column to the
+  consolidated summary and a `$stability` element to the result.
+- `basis_gene_method` selects how genes are assigned to factors for the
+  primary output: `"argmax"` (the default, unchanged) or `"specificity"`
+  (Kim-Park markers).
+
 ## NMFprofileR 0.4.0
 
 ### New features

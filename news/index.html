@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">NMFprofileR</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.4.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.5.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -36,6 +36,20 @@
 
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.5.0" id="nmfprofiler-050">NMFprofileR 0.5.0<a class="anchor" aria-label="anchor" href="#nmfprofiler-050"></a></h2>
+<div class="section level3">
+<h3 id="new-features-0-5-0">New features<a class="anchor" aria-label="anchor" href="#new-features-0-5-0"></a></h3>
+<ul><li>
+<code><a href="../reference/align_factors.html">align_factors()</a></code> matches NMF factors across runs (cohorts, ranks, resamples) by basis-loading correlation to a reference run, returning the full correlation table plus a one-to-one matching (<code>greedy</code> by default; <code>hungarian</code> via <code><a href="https://rdrr.io/pkg/clue/man/solve_LSAP.html" class="external-link">clue::solve_LSAP()</a></code> when the <code>clue</code> package is installed).</li>
+<li>
+<code><a href="../reference/nmf_project.html">nmf_project()</a></code> scores new samples against an existing factorization by solving for their coefficients with the basis matrix held fixed (non-negative multiplicative updates), returning per-sample factor scores and assignments.</li>
+<li>
+<code><a href="../reference/nmf_stability.html">nmf_stability()</a></code> assesses factor reproducibility by refitting on subsamples of the samples and reporting each factor’s mean best-match correlation to the full-data fit. <code>NMFprofileR(stability_nboot = N)</code> runs it per rank (opt-in, off by default), adding a <code>Stability</code> column to the consolidated summary and a <code>$stability</code> element to the result.</li>
+<li>
+<code>basis_gene_method</code> selects how genes are assigned to factors for the primary output: <code>"argmax"</code> (the default, unchanged) or <code>"specificity"</code> (Kim-Park markers).</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.4.0" id="nmfprofiler-040">NMFprofileR 0.4.0<a class="anchor" aria-label="anchor" href="#nmfprofiler-040"></a></h2>
 <div class="section level3">

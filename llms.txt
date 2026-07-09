@@ -183,6 +183,17 @@ Individual, in-memory pipeline steps.
 - [`nmf_rank_diagnostics()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_rank_diagnostics.md)
   : Tidy NMF rank-selection diagnostics
 
+## Cross-run and validation
+
+Compare, project, and assess the stability of factors.
+
+- [`align_factors()`](https://milesgithub.github.io/NMFprofileR/reference/align_factors.md)
+  : Align NMF factors across runs by basis-loading correlation
+- [`nmf_project()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_project.md)
+  : Project new samples onto learned NMF factors
+- [`nmf_stability()`](https://milesgithub.github.io/NMFprofileR/reference/nmf_stability.md)
+  : Assess NMF factor stability by subsampling
+
 ## Result object
 
 The nmf_profile S3 object.

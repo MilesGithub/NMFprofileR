@@ -36,7 +36,10 @@ NMFprofileR(
   nmf_parallel = FALSE,
   nmf_cores = NULL,
   max_query_size = 10000,
-  enrichment_cache = NULL
+  enrichment_cache = NULL,
+  basis_gene_method = c("argmax", "specificity"),
+  stability_nboot = 0,
+  stability_frac = 0.8
 )
 ```
 
@@ -222,6 +225,29 @@ NMFprofileR(
   (e.g. across a batch) skip the network. \`NULL\` (the default)
   disables caching.
 
+- basis_gene_method:
+
+  How genes are assigned to factors for the primary basis-gene output
+  (the exported \`Basis_Genes\_\*\` tables, the enrichment input, and
+  the heatmap grouping). \`"argmax"\` (the default) assigns every gene
+  to its dominant factor; \`"specificity"\` instead uses the sharper
+  Kim-Park specificity markers (\`NMF::extractFeatures\`), leaving many
+  genes unassigned. Changing this changes the primary scientific output.
+
+- stability_nboot:
+
+  Integer. If greater than 0, factor stability is assessed for each rank
+  by refitting on \`stability_nboot\` random subsamples of the samples
+  (see \[nmf_stability()\]); a \`Stability\` column is added to
+  \`consolidated_summary_df\` and the per-rank tibbles are returned in
+  \`\$stability\`. Defaults to 0 (off), as it multiplies the fitting
+  cost.
+
+- stability_frac:
+
+  Fraction of samples drawn in each stability subsample (default 0.8);
+  only used when \`stability_nboot \> 0\`.
+
 ## Value
 
 Invisibly, an S3 object of class \`nmf_profile\` (a list underneath, so
@@ -275,6 +301,11 @@ Elements:
 
   A data frame (columns \`Rank\`, \`Reason\`) of ranks whose NMF fit
   failed and were skipped; empty when every rank succeeded.
+
+- \`stability\`:
+
+  A named list (by rank) of per-factor stability tibbles, present only
+  when \`stability_nboot \> 0\` (otherwise an empty list).
 
 - \`runtime\`:
 
