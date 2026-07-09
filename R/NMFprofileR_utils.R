@@ -271,16 +271,21 @@ normalize_predict <- function(raw, expected_length, axis = c("features", "sample
 #' @param file_prefix The base prefix for the output file name.
 #' @param write_files Logical; if TRUE (default) the fit is saved to disk as an
 #'   `.rds` file, otherwise nothing is written.
+#' @param nmf_parallel Logical; passed to [nmf_fit()] to run the consensus runs
+#'   across a local cluster (default FALSE).
+#' @param n_cores Number of workers when `nmf_parallel = TRUE`; passed to
+#'   [nmf_fit()].
 #'
 #' @return The `NMFfit` object, or `NULL` if the NMF execution fails.
 #'
 #' @noRd
 run_nmf_for_rank <- function(k, expr_matrix, method, nrun, seed, nmf_core_dir, file_prefix,
-                             write_files = TRUE) {
+                             write_files = TRUE, nmf_parallel = FALSE, n_cores = NULL) {
   cli::cli_alert_info("Running Consensus NMF (k={k}, nrun={nrun})...")
 
   # Fitting itself lives in the exported nmf_fit(); this wrapper adds disk output.
-  nmf_result <- nmf_fit(expr_matrix, rank = k, method = method, nrun = nrun, seed = seed)
+  nmf_result <- nmf_fit(expr_matrix, rank = k, method = method, nrun = nrun, seed = seed,
+                        nmf_parallel = nmf_parallel, n_cores = n_cores)
 
   if (!is.null(nmf_result) && isTRUE(write_files)) {
     save_path <- file.path(nmf_core_dir, paste0("NMF_Result_Object_Rank_k", k, ".rds"))
@@ -289,6 +294,117 @@ run_nmf_for_rank <- function(k, expr_matrix, method, nrun, seed, nmf_core_dir, f
   }
 
   return(nmf_result)
+}
+
+#' Compute a stable hash key for a g:Profiler query
+#'
+#' Produces a deterministic key from the inputs that fully determine a
+#' g:Profiler result (query genes, background, sources, and settings), used to
+#' name cache entries. Uses `digest` when available, otherwise a base-R fallback
+#' (serialize without compression, then `tools::md5sum`).
+#'
+#' @param ... Objects that define the query.
+#'
+#' @return A single character string.
+#'
+#' @noRd
+nmf_hash_key <- function(...) {
+  key <- list(...)
+  # Sort character vectors so element order does not change the key.
+  key <- lapply(key, function(v) if (is.character(v)) sort(unique(v)) else v)
+  if (requireNamespace("digest", quietly = TRUE)) {
+    return(digest::digest(key, algo = "md5"))
+  }
+  tf <- tempfile()
+  on.exit(unlink(tf), add = TRUE)
+  saveRDS(key, tf, compress = FALSE)
+  unname(tools::md5sum(tf))
+}
+
+#' Retry an expression a few times with exponential backoff
+#'
+#' Calls `fn()` and, if it errors, retries up to `retries` more times, sleeping
+#' `delay * 2^(attempt - 1)` seconds between attempts. Intended to smooth over
+#' transient network failures when querying the live g:Profiler service. The
+#' final error is re-raised if every attempt fails.
+#'
+#' @param fn A function of no arguments to evaluate.
+#' @param retries Integer number of additional attempts after the first.
+#' @param delay Numeric base delay in seconds.
+#'
+#' @return The value of `fn()`.
+#'
+#' @noRd
+with_retry <- function(fn, retries = 2, delay = 2) {
+  attempt <- 0L
+  repeat {
+    res <- tryCatch(fn(), error = function(e) e)
+    if (!inherits(res, "error")) return(res)
+    attempt <- attempt + 1L
+    if (attempt > retries) stop(res)
+    if (delay > 0) Sys.sleep(delay * 2^(attempt - 1L))
+  }
+}
+
+#' Run a single g:Profiler query, with optional caching and retry
+#'
+#' Wraps `gprofiler2::gost()` with the package's oversized-query guard, on-disk
+#' caching, and transient-failure retry. Returns the `gost` result object, or
+#' `NULL` when the query is skipped or ultimately fails.
+#'
+#' @param query A named or unnamed character vector / list of gene symbols.
+#' @param organism,sources,correction,cutoff,background_genes g:Profiler query
+#'   settings (see [NMFprofileR()]).
+#' @param query_size Integer size of the query, used for the oversized guard.
+#' @param max_query_size Integer; queries larger than this are skipped.
+#' @param cache_dir Optional directory for caching (`NULL` disables caching).
+#' @param retries,retry_delay Passed to [with_retry()].
+#' @param label A short label used in messages (e.g. the factor name).
+#'
+#' @return A `gost` result object, or `NULL`.
+#'
+#' @noRd
+run_gost_query <- function(query, organism, sources, correction, cutoff, background_genes,
+                           query_size, max_query_size = 10000, cache_dir = NULL,
+                           retries = 2, retry_delay = 2, label = "query") {
+  if (!is.null(max_query_size) && is.finite(max_query_size) && query_size > max_query_size) {
+    warning(sprintf("Skipping g:Profiler %s: query has %d genes (> max_query_size = %d).",
+                    label, query_size, max_query_size), call. = FALSE)
+    return(NULL)
+  }
+
+  cache_file <- NULL
+  if (!is.null(cache_dir)) {
+    key <- nmf_hash_key(unlist(query, use.names = FALSE), background_genes, sources,
+                        correction, cutoff, organism)
+    cache_file <- file.path(cache_dir, paste0("gost_", key, ".rds"))
+    if (file.exists(cache_file)) {
+      return(tryCatch(readRDS(cache_file), error = function(e) NULL))
+    }
+  }
+
+  res <- tryCatch(
+    with_retry(function() {
+      suppressMessages(suppressWarnings(
+        gprofiler2::gost(
+          query = query, organism = organism, sources = sources,
+          correction_method = correction, user_threshold = cutoff,
+          custom_bg = background_genes, significant = TRUE
+        )
+      ))
+    }, retries = retries, delay = retry_delay),
+    error = function(e) {
+      warning(sprintf("g:Profiler query failed for %s: %s", label, conditionMessage(e)),
+              call. = FALSE)
+      NULL
+    }
+  )
+
+  if (!is.null(cache_file) && !is.null(res)) {
+    dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+    tryCatch(saveRDS(res, cache_file), error = function(e) NULL)
+  }
+  res
 }
 
 #' Perform Functional Enrichment for a List of Gene Sets
@@ -318,32 +434,26 @@ perform_enrichment <- function(basis_genes_list,
                                output_dir,
                                k,
                                write_files = TRUE,
-                               label = "Enrichment") {
+                               label = "Enrichment",
+                               max_query_size = 10000,
+                               enrichment_cache = NULL,
+                               retries = 2,
+                               retry_delay = 2) {
   cli::cli_alert_info("Performing per-factor functional enrichment (k={k})...")
 
   all_results <- lapply(names(basis_genes_list), function(factor_name) {
     gene_set <- basis_genes_list[[factor_name]]
     if (length(gene_set) < 5) return(NULL)
 
-    gost_res <- tryCatch({
-
-      named_query <- list(gene_set)
-      names(named_query) <- factor_name
-      suppressMessages(
-        suppressWarnings(
-          gprofiler2::gost(
-            query = named_query,
-            organism = organism,
-            sources = sources,
-            correction_method = correction,
-            user_threshold = cutoff,
-            custom_bg = background_genes,
-            significant = TRUE
-          )))
-    }, error = function(e) {
-      warning(sprintf("g:Profiler query failed for %s (k=%s): %s", factor_name, k, e$message), call. = FALSE)
-      return(NULL)
-    })
+    named_query <- list(gene_set)
+    names(named_query) <- factor_name
+    gost_res <- run_gost_query(
+      query = named_query, organism = organism, sources = sources,
+      correction = correction, cutoff = cutoff, background_genes = background_genes,
+      query_size = length(gene_set), max_query_size = max_query_size,
+      cache_dir = enrichment_cache, retries = retries, retry_delay = retry_delay,
+      label = sprintf("%s (k=%s)", factor_name, k)
+    )
 
     if (!is.null(gost_res) && is.data.frame(gost_res$result) && nrow(gost_res$result) > 0) {
       if (isTRUE(write_files)) {
@@ -383,29 +493,24 @@ perform_combined_enrichment <- function(basis_genes_list,
                                         sources,
                                         output_dir,
                                         k,
-                                        write_files = TRUE) {
+                                        write_files = TRUE,
+                                        max_query_size = 10000,
+                                        enrichment_cache = NULL,
+                                        retries = 2,
+                                        retry_delay = 2) {
   cli::cli_alert_info("Performing combined enrichment on all basis genes (k={k})...")
   if (isTRUE(write_files)) dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
   combined_genes <- unique(unlist(basis_genes_list))
   if (length(combined_genes) < 5) return(data.frame())
 
-  gost_res <- tryCatch({
-    suppressMessages(
-      suppressWarnings(
-        gprofiler2::gost(
-          query = combined_genes,
-          organism = organism,
-          sources = sources,
-          correction_method = correction,
-          user_threshold = cutoff,
-          custom_bg = background_genes,
-          significant = TRUE
-    )))
-  }, error = function(e) {
-    warning(sprintf("Combined g:Profiler query failed for rank %d: %s", k, conditionMessage(e)), call. = FALSE)
-    return(NULL)
-  })
+  gost_res <- run_gost_query(
+    query = combined_genes, organism = organism, sources = sources,
+    correction = correction, cutoff = cutoff, background_genes = background_genes,
+    query_size = length(combined_genes), max_query_size = max_query_size,
+    cache_dir = enrichment_cache, retries = retries, retry_delay = retry_delay,
+    label = sprintf("combined (k=%s)", k)
+  )
 
   if (!is.null(gost_res) && is.data.frame(gost_res$result) && nrow(gost_res$result) > 0) {
     if (isTRUE(write_files)) {

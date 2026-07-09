@@ -10,7 +10,9 @@ nmf_enrichment(
   organism = "hsapiens",
   sources = c("GO:BP", "GO:CC", "GO:MF", "REAC", "TF"),
   correction = "g_SCS",
-  cutoff = 0.05
+  cutoff = 0.05,
+  max_query_size = 10000,
+  enrichment_cache = NULL
 )
 }
 \arguments{
@@ -21,6 +23,13 @@ factor (e.g. from splitting [nmf_basis_genes()]).}
 
 \item{organism, sources, correction, cutoff}{g:Profiler query settings; see
 [NMFprofileR()] for details.}
+
+\item{max_query_size}{Integer; gene sets larger than this are skipped rather
+than sent to g:Profiler (default 10000).}
+
+\item{enrichment_cache}{Optional path to a directory used to cache g:Profiler
+results by query hash; `NULL` (the default) disables caching. See
+[NMFprofileR()].}
 }
 \value{
 A list with two elements: `per_factor` (a list of `gost` result
