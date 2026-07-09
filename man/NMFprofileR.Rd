@@ -145,13 +145,14 @@ visualizations and summary reports.
 }
 \section{Reproducibility}{
 
-For a fixed `nmf_seed` the NMF factorization is deterministic and yields
-identical basis and coefficient matrices whether NMF runs sequentially or
-across a parallel backend, within a fixed computational environment. Exact
-numerical reproducibility across machines can still be affected by the BLAS
-implementation and threading. Every run also writes a manifest and session
-information (surfaced in the `provenance` element of the return value) so a
-result can be traced to the parameters and g:Profiler database snapshot that
-produced it.
+NMF is run sequentially (not across a parallel backend), which is both what
+keeps results reproducible for a fixed `nmf_seed` and what avoids a failure
+mode of NMF's parallel execution when called from within a package. For a
+fixed `nmf_seed` the factorization is therefore deterministic within a fixed
+computational environment; exact numerical reproducibility across machines
+can still be affected by the BLAS implementation and threading. Every run
+also writes a manifest and session information (surfaced in the `provenance`
+element of the return value) so a result can be traced to the parameters and
+g:Profiler database snapshot that produced it.
 }
 

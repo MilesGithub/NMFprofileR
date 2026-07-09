@@ -29,8 +29,8 @@ test_that("NMFprofileR(write_files = FALSE) writes nothing and returns results",
     nmf_rank             = 2,
     output_prefix        = file.path(sandbox, "NMF"),
     nmf_nrun             = 2,
-    expression_threshold = 0,
-    variance_quantile    = 0,
+    expression_threshold = 10,
+    variance_quantile    = 0.99,
     write_files          = FALSE
   )
 

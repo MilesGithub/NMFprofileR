@@ -63,23 +63,21 @@ nmf_preprocess <- function(expression_data,
 #' fit <- nmf_fit(m, rank = 3, nrun = 10)
 #' }
 nmf_fit <- function(expr_matrix, rank, method = "brunet", nrun = 20, seed = 123456) {
-  is_windows <- tolower(.Platform$OS.type) == "windows"
-  nmf_options <- if (is_windows) {
-    list(parallel = 0, verbose = TRUE)
-  } else {
-    list(parallel = min(nrun, max(1, tryCatch(parallel::detectCores(logical = TRUE), error = function(e) 1))),
-         verbose = TRUE)
-  }
-  pbackend_arg <- if (is_windows) NA else NULL
-
-  tryCatch({
-    args <- list(x = expr_matrix, rank = rank, method = method, nrun = nrun, seed = seed, .options = nmf_options)
-    if (!is.null(pbackend_arg)) args$.pbackend <- pbackend_arg
-    do.call(NMF::nmf, args)
-  }, error = function(e) {
-    warning(sprintf("NMF fit failed for rank %s: %s", rank, conditionMessage(e)), call. = FALSE)
-    NULL
-  })
+  # Run sequentially (parallel = 0, no parallel backend). NMF's parallel
+  # execution requires the NMF package to be attached in the worker processes,
+  # which is not the case when NMF is called from another package's namespace
+  # -- it fails there with "none of the packages are loaded". Sequential
+  # execution is also what makes results reproducible for a fixed seed.
+  tryCatch(
+    NMF::nmf(
+      x = expr_matrix, rank = rank, method = method, nrun = nrun, seed = seed,
+      .options = list(parallel = 0), .pbackend = NA
+    ),
+    error = function(e) {
+      warning(sprintf("NMF fit failed for rank %s: %s", rank, conditionMessage(e)), call. = FALSE)
+      NULL
+    }
+  )
 }
 
 #' Assign genes to their dominant NMF factor
